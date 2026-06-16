@@ -362,6 +362,43 @@ document.addEventListener('DOMContentLoaded',function(){$id('langBtn').textConte
             } catch (e) { toast('请求失败', true); }
         }
 
+        async function importAccountsJson(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!Array.isArray(data)) {
+                        toast('JSON 格式错误: 必须是数组', true);
+                        return;
+                    }
+                    const r = await fetch('/api/account/import-json', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    const res = await r.json();
+                    if (res.ok) {
+                        toast(`成功导入了 ${res.added} 个新账号！`);
+                        loadAccounts();
+                        loadConfig();
+                    } else {
+                        toast('导入失败: ' + res.error, true);
+                    }
+                } catch (err) {
+                    toast('解析 JSON 文件失败: ' + err.message, true);
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function exportAccountsJson() {
+            window.open('/api/account/export-json', '_blank');
+        }
+
         async function testAcct(i) {
             const btn = event.target;
             btn.disabled = true; btn.textContent = '测试中...';

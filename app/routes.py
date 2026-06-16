@@ -1327,6 +1327,71 @@ async def sync_accounts_json_endpoint(username: str = Depends(verify_admin)):
         return {"ok": False, "error": str(e)}
 
 
+@router.post("/api/account/import-json")
+async def import_accounts_json_endpoint(request: Request, username: str = Depends(verify_admin)):
+    try:
+        data = await request.json()
+        if not isinstance(data, list):
+            raise ValueError("Expected a JSON array")
+        
+        count = 0
+        existing_uids = {acc.user_id for acc in config_manager.config.mimo_accounts}
+        
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            uid = ""
+            st = ""
+            ph = ""
+            
+            if "serviceToken" in item:
+                st = item["serviceToken"]
+            elif "passToken" in item:
+                st = item["passToken"]
+                
+            if "userId" in item:
+                uid = str(item["userId"])
+            if "xiaomichatbot_ph" in item:
+                ph = item["xiaomichatbot_ph"]
+                
+            cookies = item.get("cookies", [])
+            for c in cookies:
+                if isinstance(c, dict):
+                    if c.get("name") == "serviceToken": st = c.get("value", "")
+                    elif c.get("name") == "userId": uid = str(c.get("value", ""))
+                    elif c.get("name") == "xiaomichatbot_ph": ph = c.get("value", "")
+            
+            if st and uid and uid not in existing_uids:
+                new_acc = MimoAccount(
+                    service_token=st,
+                    user_id=uid,
+                    email=item.get("email", ""),
+                    xiaomichatbot_ph=ph,
+                    login_time=item.get("created_at", ""),
+                    is_valid=True,
+                    raw_data=item
+                )
+                config_manager.config.mimo_accounts.append(new_acc)
+                existing_uids.add(uid)
+                count += 1
+                
+        if count > 0:
+            config_manager.save()
+            
+        return {"ok": True, "added": count}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/api/account/export-json")
+async def export_accounts_json_endpoint(username: str = Depends(verify_admin)):
+    from fastapi.responses import FileResponse
+    accounts_file = Path("accounts.json")
+    if not accounts_file.exists():
+        raise HTTPException(status_code=404, detail="accounts.json not found")
+    return FileResponse(path=accounts_file, filename="accounts.json", media_type="application/json")
+
+
 @router.post("/api/accounts/{idx}/test")
 async def test_account(idx: int, username: str = Depends(verify_admin)):
     accounts = config_manager.config.mimo_accounts
