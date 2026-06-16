@@ -1,0 +1,22 @@
+[
+  {
+    "email": "user1@example.com",
+    "password": "your_password",
+    "token": "your_token",
+    "cookies": [
+      {
+        "name": "serviceToken",
+        "value": "your_service_token_value_here"
+      },
+      {
+        "name": "userId",
+        "value": "123456789"
+      },
+      {
+        "name": "xiaomichatbot_ph",
+        "value": "your_xiaomichatbot_ph_value_here"
+      }
+    ],
+    "created_at": "2024-01-01T00:00:00.000Z"
+  }
+]

@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiMo2API</title>
+    <style>
+        :root {
+            --primary: #818cf8;
+            --primary-hover: #6366f1;
+            --success: #34d399;
+            --success-hover: #10b981;
+            --danger: #fb7185;
+            --danger-hover: #e11d48;
+            --bg: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --bg-input: rgba(15, 23, 42, 0.6);
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: rgba(148, 163, 184, 0.1);
+            --shadow: rgba(0, 0, 0, 0.4);
+            --glass-blur: 12px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: radial-gradient(circle at top right, #1e1b4b, var(--bg) 60%), radial-gradient(circle at bottom left, #0f172a, #020617 80%);
+            background-attachment: fixed;
+            min-height: 100vh; color: var(--text); line-height: 1.6;
+        }
+        .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+        
+        .header { text-align: center; margin-bottom: 40px; position: relative; }
+        .header h1 {
+            font-size: 2.5rem; font-weight: 800; letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #818cf8, #c084fc, #f472b6);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text; margin-bottom: 8px;
+            animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .8; } }
+        .header p { color: var(--text-muted); font-size: 1.05rem; }
+
+        .card {
+            background: var(--bg-card); border-radius: 20px; padding: 28px;
+            margin-bottom: 24px; box-shadow: 0 10px 40px var(--shadow);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+        }
+
+        input, textarea {
+            width: 100%; padding: 14px 18px;
+            background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 12px; color: var(--text); font-size: 14px;
+            transition: all 0.3s ease; outline: none;
+        }
+        input:focus, textarea:focus {
+            border-color: var(--primary); background: rgba(15, 23, 42, 0.8);
+            box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.15);
+        }
+        input::placeholder, textarea::placeholder { color: var(--text-muted); }
+        textarea { height: 140px; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; resize: vertical; }
+        
+        button {
+            padding: 12px 24px; border: none; border-radius: 12px;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: inline-flex;
+            align-items: center; gap: 8px; justify-content: center;
+        }
+        button:active { transform: scale(0.97); }
+        .btn-primary { background: linear-gradient(135deg, var(--primary), #a855f7); color: white; box-shadow: 0 4px 12px rgba(129, 140, 248, 0.3); }
+        .btn-primary:hover { background: linear-gradient(135deg, var(--primary-hover), #9333ea); box-shadow: 0 6px 16px rgba(129, 140, 248, 0.4); transform: translateY(-1px); }
+        .btn-success { background: linear-gradient(135deg, var(--success), #059669); color: white; box-shadow: 0 4px 12px rgba(52, 211, 153, 0.2); }
+        .btn-success:hover { background: linear-gradient(135deg, var(--success-hover), #047857); box-shadow: 0 6px 16px rgba(52, 211, 153, 0.3); transform: translateY(-1px); }
+        .btn-danger { background: var(--danger); color: white; padding: 8px 16px; font-size: 13px; }
+        .btn-danger:hover { background: var(--danger-hover); }
+        .btn-outline { background: rgba(255,255,255,0.03); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; font-size: 13px; }
+        .btn-outline:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2); transform: translateY(-1px); }
+        
+        .btn-group { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+        
+        .field { margin-bottom: 16px; }
+        .field label { display: block; font-size: 13px; font-weight: 500; color: #cbd5e1; margin-bottom: 6px; }
+
+        .toggle-row { display:flex; align-items:center; justify-content:space-between; }
+        .toggle-label { font-size:13px; font-weight:500; color:#cbd5e1; }
+        .switch { position:relative; display:inline-block; width:44px; height:24px; }
+        .switch input { opacity:0; width:0; height:0; }
+        .slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:rgba(255,255,255,0.1); border-radius:24px; transition:0.4s; }
+        .slider::before { content:''; position:absolute; height:18px; width:18px; left:3px; bottom:3px; background:#fff; border-radius:50%; transition:0.4s cubic-bezier(0.4, 0.0, 0.2, 1); }
+        .switch input:checked + .slider { background:var(--primary); }
+        .switch input:checked + .slider::before { transform:translateX(20px); }
+
+        .tabs {
+            display: flex; gap: 4px; margin-bottom: 0; padding: 6px;
+            background: rgba(15, 23, 42, 0.4); border-radius: 16px 16px 0 0;
+            backdrop-filter: blur(var(--glass-blur));
+            border-bottom: 1px solid var(--border);
+        }
+        .tab {
+            flex: 1; padding: 12px 4px; text-align: center; font-size: 14px; font-weight: 500;
+            cursor: pointer; background: transparent; color: var(--text-muted);
+            transition: all 0.3s ease; border-radius: 10px;
+        }
+        .tab:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+        .tab.active { background: var(--bg-card); color: var(--primary); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .tab-content { background: var(--bg-card); border-radius: 0 0 20px 20px; padding: 28px; backdrop-filter: blur(var(--glass-blur)); }
+        .tab-panel { display: none; animation: fadeIn 0.4s ease; }
+        .tab-panel.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .status { padding: 12px 16px; border-radius: 12px; margin: 16px 0; font-size: 13px; display: flex; align-items: center; gap: 10px; backdrop-filter: blur(8px); }
+        .status.ok { background: rgba(16,185,129,0.1); color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
+        .status.err { background: rgba(239,68,68,0.1); color: #fb7185; border: 1px solid rgba(239,68,68,0.2); }
+        .status.info { background: rgba(129,140,248,0.1); color: #a5b4fc; border: 1px solid rgba(129,140,248,0.2); }
+
+        .account {
+            background: rgba(15, 23, 42, 0.5); padding: 18px; border-radius: 14px;
+            margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.05);
+            transition: all 0.3s ease;
+        }
+        .account:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); border-color: rgba(255,255,255,0.1); }
+        .account .info-line { font-size: 13px; color: var(--text-muted); margin-bottom: 6px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .account .info-line b { color: #e2e8f0; font-weight: 500; }
+        .account code { background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 6px; font-size: 12px; color: #7dd3fc; font-family: 'SF Mono', monospace; }
+        .account .actions { display: flex; gap: 10px; margin-top: 14px; }
+        .account .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+        .account .badge { padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .badge-valid { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+        .badge-invalid { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
+        .empty { text-align: center; color: var(--text-muted); padding: 40px; font-size: 15px; }
+
+        .toast {
+            position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-20px);
+            padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 500; z-index: 1000;
+            opacity: 0; visibility: hidden; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1);
+        }
+        .toast.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+        .toast-ok { background: rgba(6, 78, 59, 0.9); color: #6ee7b7; }
+        .toast-err { background: rgba(127, 29, 29, 0.9); color: #fca5a5; }
+
+        .usage-tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+        .usage-tbl th, .usage-tbl td { padding: 14px 16px; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .usage-tbl th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; background: rgba(15, 23, 42, 0.6); position: sticky; top: 0; z-index: 1; }
+        .usage-tbl th:first-child { border-top-left-radius: 12px; } .usage-tbl th:last-child { border-top-right-radius: 12px; }
+        .usage-tbl td { font-variant-numeric: tabular-nums; color: #e2e8f0; }
+        .usage-tbl tr:hover td { background: rgba(255,255,255,0.02); }
+        .usage-tbl tr:last-child td { border-bottom: none; }
+        .usage-tbl .model-cell { text-align: left; font-weight: 500; }
+        .usage-scroll { max-height: 440px; overflow-y: auto; border-radius: 12px; background: rgba(0,0,0,0.2); }
+        .usage-tbl .total-row { font-weight: 700; background: rgba(15, 23, 42, 0.8) !important; }
+        .usage-tbl .total-row td { color: var(--primary); padding-top: 16px; padding-bottom: 16px; border-top: 1px solid rgba(129, 140, 248, 0.3); }
+        
+        .period-btn { padding: 10px 18px; border-radius: 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: var(--text-muted); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.3s; }
+        .period-btn:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+        .period-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: 0 4px 12px rgba(129, 140, 248, 0.3); }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        @media (max-width: 600px) {
+            .container { padding: 20px 12px; }
+            .header h1 { font-size: 2rem; }
+            .tabs { flex-wrap: wrap; }
+            .tab { flex-basis: 30%; }
+            .btn-group { flex-direction: column; }
+            .btn-group button { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>MiMo2API</h1>
+            <p>小米 MiMo 模型 OpenAI 兼容接口配置中心</p>
+            <div style="position:absolute;top:0;right:0">
+                <button onclick="toggleLang()" id="langBtn" style="padding:8px 16px;background:rgba(255,255,255,0.05);color:var(--text-muted);border:1px solid var(--border);border-radius:10px;cursor:pointer;font-size:13px;backdrop-filter:blur(4px);transition:all 0.3s;">🌐 EN</button>
+            </div>
+        </div>
+
+        <div class="card" style="padding: 0; background: transparent; border: none; box-shadow: none;">
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('accounts')">账号管理</div>
+                <div class="tab" onclick="switchTab('curl')">cURL 导入</div>
+                <div class="tab" onclick="switchTab('cookie')">Cookie 导入</div>
+                <div class="tab" onclick="switchTab('apikey')">系统设置</div>
+                <div class="tab" onclick="switchTab('usage')">用量统计</div>
+            </div>
+
+            <div class="tab-content">
+                <!-- 账号管理 -->
+                <div id="panel-accounts" class="tab-panel active">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; color: #e2e8f0;">已配置的账号</h3>
+                        <div class="btn-group" style="margin-top: 0; gap: 8px;">
+                            <button class="btn-outline" onclick="syncAccountsJson()" style="padding: 6px 12px; font-size: 12px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg>
+                                同步 accounts.json
+                            </button>
+                        </div>
+                    </div>
+                    <div id="accounts"></div>
+                    <div class="btn-group" style="margin-top: 20px;">
+                        <button class="btn-success" onclick="testAll()">测试全部有效性</button>
+                        <button class="btn-primary" onclick="cleanupSessions()" style="background:linear-gradient(135deg, #f43f5e, #e11d48)">清理过期会话</button>
+                        <button class="btn-outline" onclick="loadAccounts()">刷新列表</button>
+                    </div>
+                </div>
+
+                <!-- cURL 导入 -->
+                <div id="panel-curl" class="tab-panel">
+                    <details style="margin-bottom:16px; background: rgba(0,0,0,0.2); padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border);">
+                        <summary style="cursor:pointer;color:var(--primary);font-size:14px;font-weight:500;">如何获取 cURL 命令？</summary>
+                        <ol style="margin-top:12px;padding-left:24px;color:var(--text-muted);font-size:13px;line-height:2;">
+                            <li>在浏览器中登录 <a href="https://aistudio.xiaomimimo.com" target="_blank" style="color:var(--primary);text-decoration:none;">aistudio.xiaomimimo.com</a></li>
+                            <li>按下 <kbd style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;">F12</kbd> 打开开发者工具，切换到 <b>Network (网络)</b> 标签</li>
+                            <li>在网页中发送一条对话，在列表中找到名为 <code style="color:#f472b6;">chat</code> 的请求</li>
+                            <li>右键点击它 → Copy (复制) → <b>Copy as cURL (bash)</b></li>
+                            <li>将复制的内容粘贴到下方文本框中</li>
+                        </ol>
+                    </details>
+                    <textarea id="curl" placeholder="在此粘贴 cURL 命令...&#10;示例: curl 'https://aistudio.xiaomimimo.com/open-apis/bot/chat' -H 'cookie: serviceToken=xxx; userId=123;'"></textarea>
+                    <button class="btn-primary" style="margin-top:12px;width:100%" onclick="parseCurl()">解析并验证</button>
+                    <div id="curlResult"></div>
+                </div>
+
+                <!-- Cookie 手动输入 -->
+                <div id="panel-cookie" class="tab-panel">
+                    <div class="status info" style="margin-bottom: 20px;">
+                        <div>
+                            <b>快速导入</b>：直接粘贴包含所有 Cookie 的完整字符串（用英文分号分隔），点击下方按钮即可自动拆分填充。
+                        </div>
+                    </div>
+                    <div class="field">
+                        <textarea id="c-raw" placeholder="粘贴整段 Cookie...&#10;示例: serviceToken=xxx; userId=123; xiaomichatbot_ph=yyy;" style="height:80px"></textarea>
+                    </div>
+                    <button class="btn-outline" style="width:100%;margin-bottom:20px" onclick="parseCookieStr()">解析填充 ↓</button>
+                    
+                    <div style="display:grid; grid-template-columns: 1fr; gap: 16px;">
+                        <div class="field"><label>serviceToken</label><input type="text" id="c-st" placeholder="必填"></div>
+                        <div class="field"><label>userId</label><input type="text" id="c-uid" placeholder="必填"></div>
+                        <div class="field"><label>xiaomichatbot_ph</label><input type="text" id="c-ph" placeholder="选填"></div>
+                    </div>
+                    <button id="btn-save-cookie" class="btn-primary" style="width:100%; margin-top: 10px;" onclick="saveCookie()">保存账号</button>
+                </div>
+
+                <!-- 系统设置 -->
+                <div id="panel-apikey" class="tab-panel">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: #e2e8f0; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid var(--border);">服务配置</h3>
+                    
+                    <div class="field">
+                        <label data-i18n="apiKeysLabel">API Keys (多个以逗号分隔)</label>
+                        <input type="text" id="apiKeys" placeholder="sk-key1, sk-key2">
+                        <div style="font-size:12px;color:var(--text-muted);margin-top:6px">供客户端调用此中转 API 时使用的认证密钥</div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 24px;">
+                        <div class="field">
+                            <label>单账号并发会话上限</label>
+                            <input type="number" id="sessionLimit" placeholder="默认: 10" min="1" max="100">
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:6px">达到上限时自动轮换到下一个账号</div>
+                        </div>
+                        <div class="field">
+                            <label data-i18n="adminPwdLabel">后台管理员密码</label>
+                            <input type="password" id="adminPassword" placeholder="修改后需重新登录">
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:6px">保护此管理界面的密码</div>
+                        </div>
+                    </div>
+
+                    <div class="field" style="margin-top:24px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px;">
+                        <label class="toggle-row">
+                            <span class="toggle-label" data-i18n="passthroughLabel">工具透传模式 (Tool Passthrough)</span>
+                            <label class="switch">
+                                <input type="checkbox" id="passthroughToggle">
+                                <span class="slider"></span>
+                            </label>
+                        </label>
+                        <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px;line-height:1.6;" data-i18n="passthroughHint">
+                            开启后将直接向 MiMo 模型嵌入原始 JSON Schema 工具定义，跳过通用格式指导说明书。适合 Roo Code / Cline 等对格式要求严格的智能体。
+                        </div>
+                    </div>
+                    
+                    <button class="btn-primary" style="width:100%;margin-top:16px;padding:14px" onclick="saveKeys()">保存全部配置</button>
+                    <div id="keysResult"></div>
+                </div>
+
+                <!-- 用量统计 -->
+                <div id="panel-usage" class="tab-panel">
+                    <div class="btn-group" style="margin-bottom:20px; justify-content: space-between;">
+                        <div style="display: flex; gap: 10px;">
+                            <button class="period-btn active" data-p="total" onclick="switchPeriod('total')">全部</button>
+                            <button class="period-btn" data-p="week" onclick="switchPeriod('week')">本周</button>
+                            <button class="period-btn" data-p="today" onclick="switchPeriod('today')">今日</button>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn-outline" onclick="loadUsage()">刷新</button>
+                            <button class="btn-danger" onclick="clearUsage()">清空数据</button>
+                        </div>
+                    </div>
+                    <div id="usageContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+var _lang=localStorage.getItem('mimo_lang')||'zh';
+var _I={zh:{"curl":"cURL","cookie":"Cookie","accounts":"账号","apikey":"API Key","usage":"用量统计","parseCurl":"解析 cURL","parseFill":"解析填充 ↓","saveAcct":"保存账号","verifyBtn":"验证中...","saved":"已保存","saveFail":"保存失败","reqFail":"请求失败","refresh":"刷新","testAll":"测试全部","cleanupSessions":"清理过期会话","noAccts":"暂无配置账号","valid":"✅ 有效","notVerified":"⚪ 未验证","test":"测试","delete":"删除","loadFail":"加载失败","testing":"测试中...","testFail":"测试失败","noAcctTest":"无账号可测试","allTestDone":"有效","cleanup":"清理中...","cleanupFail":"清理失败: ","unknown":"未知","deleteConfirm":"确定删除此账号？","deleted":"已删除","deleteFail":"删除失败","usageNoData":"暂无用量数据","usageModel":"模型","usageReqs":"请求","usageInput":"输入","usageOutput":"输出","usageTotal":"总计","usageSum":"合计","usageLoadFail":"加载失败: ","periodAll":"全部","periodWeek":"本周","periodToday":"今日","clearConfirm":"确定清空全部用量数据？此操作不可撤销。","cleared":"已清空","clearFail":"清空失败","configSaved":"配置已保存","saveConfigFail":"保存失败","parseFail":"解析失败，请检查 cURL 格式","parsing":"解析中...","parseOk":"解析成功","testConn":"测试连接","addAcct":"添加账号","connOk":"连接成功: ","connFail":"连接失败: ","acctAdded":"账号已添加","pasteCurl":"请粘贴 cURL 命令","pasteCookie":"请粘贴 Cookie 字符串","fieldsRequired":"请填写所有字段","filledFields":"已填充","filledFields2":"个字段","filledFields3":"缺少","filledFields4":"个","noValidFields":"未识别到有效字段","apiKeysLabel":"API Keys (多个以逗号分隔)","apiKeysPH":"sk-key1, sk-key2","saveConfig":"保存配置","mimoDesc":"小米 MiMo 模型 OpenAI 兼容接口配置中心","keysSaved":"配置已保存","saving":"保存中...","passthroughLabel":"工具透传模式 (Tool Passthrough)","passthroughHint":"开启后将直接向 MiMo 模型嵌入原始 JSON Schema 工具定义，跳过通用格式指导说明书。适合 Roo Code / Cline 等对格式要求严格的智能体。","adminPwdLabel":"后台管理员密码","adminPwdPH":"修改后需重新登录"},
+en:{"curl":"cURL","cookie":"Cookie","accounts":"Accounts","apikey":"Settings","usage":"Usage","parseCurl":"Parse cURL","parseFill":"Parse & Fill ↓","saveAcct":"Save Account","verifyBtn":"Verifying...","saved":"Saved","saveFail":"Save Failed","reqFail":"Request Failed","refresh":"Refresh","testAll":"Test All","cleanupSessions":"Cleanup Sessions","noAccts":"No accounts configured","valid":"✅ Active","notVerified":"⚪ Not Verified","test":"Test","delete":"Delete","loadFail":"Load Failed","testing":"Testing...","testFail":"Test Failed","noAcctTest":"No accounts to test","allTestDone":"valid","cleanup":"Cleaning...","cleanupFail":"Cleanup failed: ","unknown":"unknown","deleteConfirm":"Delete this account?","deleted":"Deleted","deleteFail":"Delete Failed","usageNoData":"No usage data","usageModel":"Model","usageReqs":"Requests","usageInput":"Input","usageOutput":"Output","usageTotal":"Total","usageSum":"Total","usageLoadFail":"Load failed: ","periodAll":"All","periodWeek":"This Week","periodToday":"Today","clearConfirm":"Clear all usage data? This cannot be undone.","cleared":"Cleared","clearFail":"Clear failed","configSaved":"Config saved","saveConfigFail":"Save failed","parseFail":"Parse failed, check cURL format","parsing":"Parsing...","parseOk":"Parsed","testConn":"Test Connection","addAcct":"Add Account","connOk":"Connected: ","connFail":"Connection failed: ","acctAdded":"Account added","pasteCurl":"Please paste cURL command","pasteCookie":"Please paste Cookie string","fieldsRequired":"Please fill all fields","filledFields":"Filled","filledFields2":"field(s)","filledFields3":"missing","filledFields4":"","noValidFields":"No valid fields found","apiKeysLabel":"API Keys (comma separated)","apiKeysPH":"sk-key1, sk-key2","saveConfig":"Save Config","mimoDesc":"Xiaomi MiMo OpenAI-compatible API Dashboard","keysSaved":"Config saved","saving":"Saving...","passthroughLabel":"Tool Passthrough Mode","passthroughHint":"Bypass format instructions and embed raw JSON Schema tool definitions directly. Ideal for agents like Roo Code / Cline.","adminPwdLabel":"Admin Password","adminPwdPH":"Re-login required after change"}};
+function _(k){return (_I[_lang]||_I.zh)[k]||k}
+function toggleLang(){_lang=_lang==='zh'?'en':'zh';localStorage.setItem('mimo_lang',_lang);$id('langBtn').textContent=_lang==='zh'?'🌐 EN':'🌐 中';applyI18n()}
+function applyI18n(){
+    document.querySelectorAll('[data-i18n]').forEach(function(el){var k=el.getAttribute('data-i18n');if(k)el.textContent=_(k)});
+    document.querySelectorAll('[data-i18n-ph]').forEach(function(el){var k=el.getAttribute('data-i18n-ph');if(k)el.placeholder=_(k)});
+    document.querySelector('.header p').textContent=_('mimoDesc');
+    var tabs=document.querySelectorAll('.tab');
+    var tkeys=['accounts','curl','cookie','apikey','usage'];
+    for(var i=0;i<5&&i<tabs.length;i++)tabs[i].textContent=_(tkeys[i])
+}
+document.addEventListener('DOMContentLoaded',function(){$id('langBtn').textContent=_lang==='zh'?'🌐 EN':'🌐 中';applyI18n()});
+
+        let cfg = { api_keys: '', mimo_accounts: [], session_limit_per_account: 10 }, parsed = null;
+
+        function $id(id) { return document.getElementById(id); }
+        function toast(msg, err) {
+            const t = $id('toast');
+            t.textContent = msg; t.className = 'toast show ' + (err ? 'toast-err' : 'toast-ok');
+            clearTimeout(t._t); t._t = setTimeout(() => { t.className = 'toast'; }, 3000);
+        }
+        function showStatus(id, type, msg) {
+            $id(id).innerHTML = `<div class="status ${type}">${msg}</div>`;
+        }
+        function switchTab(t) {
+            document.querySelectorAll('.tab').forEach((el, i) => {
+                el.className = 'tab' + (['accounts','curl','cookie','apikey','usage'][i] === t ? ' active' : '');
+            });
+            document.querySelectorAll('.tab-panel').forEach(p => p.className = 'tab-panel');
+            $id('panel-' + t).className = 'tab-panel active';
+            if (t === 'accounts') loadAccounts();
+            if (t === 'usage') loadUsage();
+        }
+
+        async function loadConfig() {
+            try {
+                const r = await fetch('/api/config');
+                cfg = await r.json();
+                $id('apiKeys').value = cfg.api_keys || '';
+                $id('passthroughToggle').checked = !!cfg.tools_passthrough;
+                $id('adminPassword').value = cfg.admin_password || '';
+                $id('sessionLimit').value = cfg.session_limit_per_account || 10;
+            } catch (e) {}
+        }
+
+        async function saveKeys() {
+            cfg.api_keys = $id('apiKeys').value;
+            cfg.tools_passthrough = $id('passthroughToggle').checked;
+            cfg.admin_password = $id('adminPassword').value || 'admin';
+            cfg.session_limit_per_account = parseInt($id('sessionLimit').value) || 10;
+            try {
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(cfg)
+                });
+                showStatus('keysResult', 'ok', _('configSaved'));
+                setTimeout(() => $id('keysResult').innerHTML = '', 2000);
+                toast('设置已保存并生效');
+            } catch (e) {
+                showStatus('keysResult', 'err', _('saveConfigFail'));
+            }
+        }
+
+        async function parseCurl() {
+            const curl = $id('curl').value.trim();
+            if (!curl) { toast(_('pasteCurl'), true); return; }
+            showStatus('curlResult', 'info', _('parsing'));
+            try {
+                const r = await fetch('/api/parse-curl', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ curl })
+                });
+                if (!r.ok) { showStatus('curlResult', 'err', '解析失败，请检查 cURL 格式'); return; }
+                parsed = await r.json();
+                $id('curlResult').innerHTML = `
+                    <div class="status ok">解析成功 — userId: <b>${parsed.user_id}</b></div>
+                    <div class="btn-group">
+                        <button class="btn-outline" onclick="testParsed()">验证连接</button>
+                        <button class="btn-success" onclick="saveParsed()">保存账号</button>
+                    </div>
+                    <div id="testResult"></div>
+                `;
+            } catch (e) { showStatus('curlResult', 'err', '请求失败: ' + e.message); }
+        }
+
+        async function testParsed() {
+            if (!parsed) return;
+            showStatus('testResult', 'info', _('testing'));
+            try {
+                const r = await fetch('/api/test-account', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(parsed)
+                });
+                const d = await r.json();
+                if (d.success) showStatus('testResult', 'ok', '连接成功: ' + d.response.slice(0, 60) + '...');
+                else showStatus('testResult', 'err', '连接失败: ' + d.error);
+            } catch (e) { showStatus('testResult', 'err', '请求失败'); }
+        }
+
+        async function saveParsed() {
+            if (!parsed) return;
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = _('saving');
+            try {
+                cfg.mimo_accounts = cfg.mimo_accounts || [];
+                cfg.mimo_accounts.push(parsed);
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(cfg)
+                });
+                parsed = null;
+                $id('curl').value = '';
+                $id('curlResult').innerHTML = '';
+                toast(_('acctAdded'));
+                loadConfig();
+                switchTab('accounts');
+            } catch (e) { toast(_('saveFail'), true); }
+            finally { btn.disabled = false; btn.textContent = '保存账号'; }
+        }
+
+        function parseCookieStr() {
+            const raw = $id('c-raw').value.trim();
+            if (!raw) { toast(_('pasteCookie'), true); return; }
+            const parts = raw.split(';');
+            const map = {};
+            for (let p of parts) {
+                p = p.trim(); if (!p) continue;
+                const eq = p.indexOf('='); if (eq === -1) continue;
+                let key = p.substring(0, eq).trim();
+                let val = p.substring(eq + 1).trim();
+                if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) { val = val.slice(1, -1); }
+                map[key] = val;
+            }
+            if (map.serviceToken) $id('c-st').value = map.serviceToken;
+            if (map.userId) $id('c-uid').value = map.userId;
+            if (map.xiaomichatbot_ph) $id('c-ph').value = map.xiaomichatbot_ph;
+            const filled = [map.serviceToken, map.userId, map.xiaomichatbot_ph].filter(Boolean).length;
+            if (filled >= 3) { toast('已填充 ' + filled + ' 个字段'); }
+            else if (filled > 0) { toast('已填充 ' + filled + ' 个字段（缺少 ' + (3 - filled) + ' 个）', true); }
+            else { toast('未识别到有效字段', true); }
+        }
+
+        async function saveCookie() {
+            const st = $id('c-st').value.trim();
+            const uid = $id('c-uid').value.trim();
+            const ph = $id('c-ph').value.trim();
+            if (!st || !uid) { toast('请填写必填字段', true); return; }
+            const btn = $id('btn-save-cookie');
+            btn.disabled = true; btn.textContent = _('verifyBtn');
+            try {
+                const r = await fetch('/api/account/import-cookie', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ serviceToken: st, userId: uid, xiaomichatbot_ph: ph })
+                });
+                const d = await r.json();
+                if (d.ok) {
+                    toast(_('saved'));
+                    $id('c-st').value = ''; $id('c-uid').value = ''; $id('c-ph').value = ''; $id('c-raw').value = '';
+                    loadConfig();
+                    switchTab('accounts');
+                } else {
+                    toast(d.error || '保存失败', true);
+                }
+            } catch (e) { toast(_('reqFail'), true); }
+            finally { btn.disabled = false; btn.textContent = _('saveAcct'); }
+        }
+
+        async function loadAccounts() {
+            try {
+                const r = await fetch('/api/accounts');
+                const d = await r.json();
+                const el = $id('accounts');
+                if (!d.accounts || !d.accounts.length) {
+                    el.innerHTML = '<div class="empty"><div style="font-size:40px;margin-bottom:10px;opacity:0.5">👤</div>暂无配置账号，请在其它标签页导入</div>';
+                    return;
+                }
+                const limit = parseInt($id('sessionLimit').value) || 10;
+                el.innerHTML = d.accounts.map((a, i) => {
+                    const sessionPct = Math.min(100, Math.round((a.active_sessions || 0) / limit * 100));
+                    const isOverload = (a.active_sessions || 0) >= limit;
+                    return `
+                    <div class="account">
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 12px;">
+                            <div class="info-line" style="margin-bottom:0;">
+                                <span class="status-dot" style="color:${a.is_valid ? '#4ade80' : '#fb7185'}"></span>
+                                <b>${a.email || 'UID: ' + a.user_id}</b>
+                                <span class="badge ${a.is_valid ? 'badge-valid' : 'badge-invalid'}">${a.is_valid ? 'Active' : 'Error'}</span>
+                            </div>
+                            <div style="font-size: 11px; color: var(--text-muted); background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 10px;">
+                                会话: <span style="color: ${isOverload ? '#fb7185' : '#e2e8f0'}; font-weight: bold;">${a.active_sessions || 0}</span> / ${limit}
+                            </div>
+                        </div>
+                        <div class="info-line" style="font-size:12px;"><b>Token</b> <code>${a.token_masked}</code></div>
+                        ${a.email ? `<div class="info-line" style="font-size:12px;opacity:0.7"><b>UID</b> ${a.user_id}</div>` : ''}
+                        <div class="actions">
+                            <button class="btn-outline" style="padding:6px 14px; font-size:12px" onclick="testAcct(${i})">连通性测试</button>
+                            <button class="btn-danger" style="margin-left:auto; background:transparent; color:#fb7185; border:1px solid rgba(251, 113, 133, 0.3);" onclick="delAcct(${i})">移除</button>
+                        </div>
+                    </div>
+                `}).join('');
+            } catch (e) {
+                $id('accounts').innerHTML = '<div class="empty" style="color:#fb7185">数据加载失败，请检查网络连接或刷新页面</div>';
+            }
+        }
+
+        async function syncAccountsJson() {
+            try {
+                const r = await fetch('/api/account/sync-json', { method: 'POST' });
+                const d = await r.json();
+                if (d.ok) {
+                    if (d.added > 0) toast(`成功同步了 ${d.added} 个新账号！`);
+                    else toast(`同步完成，未发现新账号。`);
+                    loadAccounts();
+                    loadConfig();
+                } else {
+                    toast('同步失败: ' + d.error, true);
+                }
+            } catch (e) { toast('请求失败', true); }
+        }
+
+        async function testAcct(i) {
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = '测试中...';
+            try {
+                const r = await fetch('/api/accounts/' + i + '/test', { method: 'POST' });
+                const d = await r.json();
+                if (d.ok) { toast('✅ 连接成功'); loadAccounts(); }
+                else toast('❌ ' + d.error, true);
+            } catch (e) { toast(_('testFail'), true); }
+            btn.disabled = false; btn.textContent = '连通性测试';
+        }
+
+        async function testAll() {
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = '测试中...';
+            try {
+                const r = await fetch('/api/accounts');
+                const d = await r.json();
+                if (!d.accounts || !d.accounts.length) { toast(_('noAcctTest'), true); btn.disabled = false; btn.textContent = '测试全部有效性'; return; }
+                let ok = 0;
+                for (let i = 0; i < d.accounts.length; i++) {
+                    btn.textContent = '测试 (' + (i + 1) + '/' + d.accounts.length + ')';
+                    try {
+                        const r2 = await fetch('/api/accounts/' + i + '/test', { method: 'POST' });
+                        const d2 = await r2.json();
+                        if (d2.ok) ok++;
+                    } catch (e) {}
+                }
+                toast(ok + '/' + d.accounts.length + ' 账号测试有效');
+                loadAccounts();
+            } catch (e) { toast(_('reqFail'), true); }
+            btn.disabled = false; btn.textContent = '测试全部有效性';
+        }
+
+        async function cleanupSessions() {
+            const btn = event.target;
+            btn.disabled = true; btn.textContent = '清理中...';
+            try {
+                const r = await fetch('/api/cleanup', { method: 'POST' });
+                const d = await r.json();
+                if (d.ok) { toast('✨ ' + d.msg); loadAccounts(); }
+                else toast('清理失败: ' + (d.msg || '未知'), true);
+            } catch (e) { toast('清理失败: ' + e.message, true); }
+            btn.disabled = false; btn.textContent = '清理过期会话';
+        }
+
+        async function delAcct(i) {
+            if (!confirm('确定要移除该账号吗？')) return;
+            try {
+                await fetch('/api/accounts/' + i, { method: 'DELETE' });
+                toast('账号已移除');
+                loadAccounts();
+                loadConfig();
+            } catch (e) { toast(_('deleteFail'), true); }
+        }
+
+        let usagePeriod = 'total';
+        function fmt(n) { return n.toLocaleString(); }
+        async function loadUsage() {
+            try {
+                const r = await fetch('/api/usage');
+                const data = await r.json();
+                const period = data[usagePeriod] || data.total || {};
+                const models = period.models || {};
+                const total = period.total || {};
+                let entries = Object.entries(models).sort((a, b) => b[1].total_tokens - a[1].total_tokens);
+
+                if (!entries.length && !total.requests) {
+                    $id('usageContent').innerHTML = '<div class="empty"><div style="font-size:40px;margin-bottom:10px;opacity:0.5">📊</div>暂无用量数据</div>';
+                    return;
+                }
+
+                let html = '<div class="usage-scroll"><table class="usage-tbl"><thead><tr><th class="model-cell">'+_('usageModel')+'</th><th>'+_('usageReqs')+'</th><th>'+_('usageInput')+'</th><th>'+_('usageOutput')+'</th><th>'+_('usageTotal')+'</th></tr></thead><tbody>';
+                for (const [model, m] of entries) {
+                    html += `<tr>
+                        <td class="model-cell"><span style="background:rgba(129, 140, 248, 0.15);color:#a5b4fc;padding:2px 8px;border-radius:6px;font-size:12px">${model}</span></td>
+                        <td>${fmt(m.requests)}</td>
+                        <td>${fmt(m.prompt_tokens)}</td>
+                        <td>${fmt(m.completion_tokens)}</td>
+                        <td style="font-weight:600;color:#e2e8f0">${fmt(m.total_tokens)}</td>
+                    </tr>`;
+                }
+                if (entries.length) {
+                    html += `<tr class="total-row">
+                        <td class="model-cell">${_('usageSum')}</td>
+                        <td>${fmt(total.requests)}</td>
+                        <td>${fmt(total.prompt_tokens)}</td>
+                        <td>${fmt(total.completion_tokens)}</td>
+                        <td>${fmt(total.total_tokens)}</td>
+                    </tr>`;
+                }
+                html += '</tbody></table></div>';
+                $id('usageContent').innerHTML = html;
+            } catch (e) {
+                $id('usageContent').innerHTML = '<div class="empty" style="color:#fb7185">加载失败: ' + e.message + '</div>';
+            }
+        }
+        function switchPeriod(p) {
+            usagePeriod = p;
+            document.querySelectorAll('#panel-usage .period-btn[data-p]').forEach(b => b.className = 'period-btn');
+            document.querySelector('#panel-usage .period-btn[data-p="'+p+'"]').className = 'period-btn active';
+            loadUsage();
+        }
+        async function clearUsage() {
+            if (!confirm(_('clearConfirm'))) return;
+            try {
+                const r = await fetch('/api/usage', { method: 'DELETE' });
+                const d = await r.json();
+                if (d.ok) { toast(_('cleared')); loadUsage(); }
+                else toast(_('clearFail'), true);
+            } catch (e) { toast('清空失败: ' + e.message, true); }
+        }
+
+        // INIT
+        loadConfig().then(() => {
+            switchTab('accounts');
+        });
+    </script>
+</body>
+</html>

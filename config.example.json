@@ -1,0 +1,6 @@
+{
+  "api_keys": "sk-mimo",
+  "admin_password": "admin",
+  "tools_passthrough": false,
+  "session_limit_per_account": 10
+}
