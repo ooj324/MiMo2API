@@ -756,14 +756,13 @@ async def _stream_response(
 # ─── 管理页面 ─────────────────────────────────────────────────
 
 from pathlib import Path as _Path
-_ADMIN_HTML = (_Path(__file__).parent.parent / "web" / "index.html").read_text(encoding="utf-8")
-
 
 @router.get("/admin")
 @router.get("/")
 async def admin_page(username: str = Depends(verify_admin)):
     from starlette.responses import HTMLResponse
-    return HTMLResponse(_ADMIN_HTML)
+    admin_html = (_Path(__file__).parent.parent / "web" / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(admin_html)
 
 
 # ─── 账号管理 API ─────────────────────────────────────────────
@@ -802,10 +801,448 @@ async def import_cookie(request: Request, username: str = Depends(verify_admin))
     uid = (data.get("userId") or "").strip()
     ph = (data.get("xiaomichatbot_ph") or "").strip()
 
-    if not st or not uid or not ph:
-        return {"ok": False, "error": "缺少必要字段 (serviceToken, userId, xiaomichatbot_ph)"}
+    if not st or not uid:
+        # Check if passToken is present for auto-exchange
+        pass_token = (data.get("passToken") or "").strip()
+        if pass_token and uid:
+            try:
+                device_id = (data.get("deviceId") or "").strip()
+                mimo_data = await exchange_passport_to_mimo(pass_token, uid, device_id)
+                st = mimo_data["serviceToken"]
+                uid = mimo_data["userId"]
+                ph = mimo_data["xiaomichatbot_ph"]
+                now = _dt.now().strftime("%m-%d %H:%M")
+                all_new_cookies = [
+                    {"name": "passToken", "value": pass_token, "domain": ".account.xiaomi.com"},
+                    {"name": "userId", "value": uid, "domain": ".account.xiaomi.com"},
+                    {"name": "deviceId", "value": mimo_data["deviceId"], "domain": ".account.xiaomi.com"},
+                    {"name": "serviceToken", "value": st, "domain": ".xiaomimimo.com"},
+                    {"name": "xiaomichatbot_ph", "value": ph, "domain": ".xiaomimimo.com"},
+                ]
+                await _save_mimo_account(uid, st, ph, f"passport_{uid}", pass_token, all_new_cookies, now)
+                return {"ok": True, "user_id": uid, "response": "SSO兑换成功"}
+            except Exception as e:
+                return {"ok": False, "error": f"SSO 自动兑换失败: {str(e)}"}
+        return {"ok": False, "error": "缺少必要字段 (serviceToken, userId, xiaomichatbot_ph) 或 (passToken, userId)"}
+
+    if not ph:
+        return {"ok": False, "error": "缺少必要字段 (xiaomichatbot_ph)"}
 
     return await _validate_and_save(st, uid, ph)
+
+
+# ─── 字段化登录 / SSO 兑换支持 ───────────────────────────────
+
+from pydantic import BaseModel as _BaseModel
+from urllib.parse import urlparse as _urlparse, parse_qs as _parse_qs, urlencode as _urlencode, urlunparse as _urlunparse
+from http.cookies import SimpleCookie as _SimpleCookie
+import hashlib as _hashlib
+
+class LoginPasswordRequest(_BaseModel):
+    username: str
+    password: str
+
+class Login2faVerifyRequest(_BaseModel):
+    session_id: str
+
+class LoginPassportRequest(_BaseModel):
+    passToken: str
+    userId: str
+    deviceId: Optional[str] = None
+
+_login_sessions = {}
+
+def _clean_expired_login_sessions():
+    now = time.time()
+    expired = [k for k, v in _login_sessions.items() if now - v["time"] > 600]
+    for k in expired:
+        _login_sessions.pop(k, None)
+
+async def exchange_passport_to_mimo(pass_token: str, user_id: str, device_id: str = None) -> dict:
+    if not device_id:
+        device_id = f"wb_{uuid.uuid4().hex}"
+        
+    passport_cookies = {
+        "passToken": pass_token,
+        "userId": user_id,
+        "deviceId": device_id
+    }
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+    }
+    
+    async with httpx.AsyncClient(follow_redirects=False) as client:
+        chat_url = "https://aistudio.xiaomimimo.com/open-apis/bot/chat"
+        resp = await client.post(chat_url, json={})
+        try:
+            login_url = resp.json().get("loginUrl")
+        except Exception:
+            raise Exception("无法从 MiMo 401 响应中获取登录 URL")
+            
+        if not login_url:
+            raise Exception("MiMo 401 响应未包含 loginUrl")
+            
+        parsed_url = _urlparse(login_url)
+        query_params = _parse_qs(parsed_url.query)
+        query_params["_json"] = ["true"]
+        new_query = _urlencode(query_params, doseq=True)
+        json_login_url = _urlunparse((
+            parsed_url.scheme,
+            parsed_url.netloc,
+            parsed_url.path,
+            parsed_url.params,
+            new_query,
+            parsed_url.fragment
+        ))
+        
+        resp_ticket = await client.get(json_login_url, cookies=passport_cookies, headers=headers)
+        ticket_text = resp_ticket.text
+        if ticket_text.startswith("&&&START&&&"):
+            ticket_text = ticket_text[11:]
+        try:
+            ticket_data = json.loads(ticket_text)
+        except Exception:
+            raise Exception(f"解析票据失败: {ticket_text[:200]}")
+            
+        code = ticket_data.get("code")
+        if code != 0:
+            raise Exception(f"小米 Passport 返回登录失败: {ticket_data.get('description', '未知错误')}")
+            
+        location = ticket_data.get("location")
+        if not location:
+            raise Exception("小米 Passport 未返回回调 location")
+            
+        resp_sts = await client.get(location, headers=headers)
+        if resp_sts.status_code not in (200, 302, 307):
+            raise Exception(f"STS 兑换失败: HTTP {resp_sts.status_code}")
+            
+        mimo_cookies = {}
+        for cookie in client.cookies.jar:
+            if "xiaomimimo.com" in cookie.domain:
+                mimo_cookies[cookie.name] = cookie.value
+                
+        service_token = mimo_cookies.get("serviceToken")
+        user_id_mimo = mimo_cookies.get("userId")
+        xiaomichatbot_ph = mimo_cookies.get("xiaomichatbot_ph")
+        
+        if not service_token or not user_id_mimo:
+            raise Exception("STS 兑换未返回 serviceToken 或 userId")
+            
+        if service_token.startswith('"') and service_token.endswith('"'):
+            service_token = service_token[1:-1]
+        if xiaomichatbot_ph and xiaomichatbot_ph.startswith('"') and xiaomichatbot_ph.endswith('"'):
+            xiaomichatbot_ph = xiaomichatbot_ph[1:-1]
+            
+        return {
+            "serviceToken": service_token,
+            "userId": user_id_mimo,
+            "xiaomichatbot_ph": xiaomichatbot_ph or "",
+            "deviceId": device_id
+        }
+
+async def _save_mimo_account(user_id: str, service_token: str, xiaomichatbot_ph: str, email: str, pass_token: str, all_cookies: list, now_str: str):
+    account = MimoAccount(
+        service_token=service_token,
+        user_id=user_id,
+        xiaomichatbot_ph=xiaomichatbot_ph
+    )
+    account.raw_data = {
+        "email": email,
+        "token": pass_token,
+        "cookies": all_cookies,
+        "created_at": now_str
+    }
+    
+    client = MimoClient(account)
+    await client.call_api("hi", False)
+    
+    existing = False
+    for i, acc in enumerate(config_manager.config.mimo_accounts):
+        if acc.user_id == user_id:
+            config_manager.config.mimo_accounts[i] = MimoAccount(
+                service_token=service_token,
+                user_id=user_id,
+                email=email,
+                xiaomichatbot_ph=xiaomichatbot_ph,
+                login_time=now_str,
+                is_valid=True,
+                raw_data=account.raw_data
+            )
+            existing = True
+            break
+            
+    if not existing:
+        config_manager.config.mimo_accounts.append(MimoAccount(
+            service_token=service_token,
+            user_id=user_id,
+            email=email,
+            xiaomichatbot_ph=xiaomichatbot_ph,
+            login_time=now_str,
+            is_valid=True,
+            raw_data=account.raw_data
+        ))
+        
+    config_manager.save()
+
+@router.post("/api/account/login-password")
+async def login_password(request: LoginPasswordRequest, username: str = Depends(verify_admin)):
+    user = request.username.strip()
+    password = request.password.strip()
+    
+    _clean_expired_login_sessions()
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    
+    async with httpx.AsyncClient(follow_redirects=False) as client:
+        chat_url = "https://aistudio.xiaomimimo.com/open-apis/bot/chat"
+        resp = await client.post(chat_url, json={})
+        try:
+            login_url = resp.json().get("loginUrl")
+        except Exception:
+            raise HTTPException(400, "无法从 MiMo 响应中获取登录 URL")
+            
+        if not login_url:
+            raise HTTPException(400, "MiMo 401 响应未包含 loginUrl")
+            
+        parsed_login_url = _urlparse(login_url)
+        query_params = _parse_qs(parsed_login_url.query)
+        
+        md5_pwd = _hashlib.md5(password.encode('utf-8')).hexdigest().upper()
+        
+        payload = {
+            "user": user,
+            "hash": md5_pwd,
+            "sid": "xiaomichatbot",
+            "callback": query_params.get("callback", [""])[0],
+            "_sign": query_params.get("_sign", [""])[0],
+            "qs": query_params.get("qs", [""])[0],
+            "_json": "true"
+        }
+        
+        login_auth_url = "https://account.xiaomi.com/pass/serviceLoginAuth2"
+        device_id = f"wb_{uuid.uuid4().hex}"
+        cookies = {"deviceId": device_id}
+        
+        resp_auth = await client.post(login_auth_url, data=payload, cookies=cookies, headers=headers)
+        text = resp_auth.text
+        if text.startswith("&&&START&&&"):
+            text = text[11:]
+            
+        try:
+            data = json.loads(text)
+        except Exception:
+            raise HTTPException(500, f"解析 Xiaomi Auth 响应失败: {text[:200]}")
+            
+        code = data.get("code")
+        if code != 0:
+            raise HTTPException(400, f"登录失败: {data.get('description', '未知错误')}")
+            
+        notification_url = data.get("notificationUrl")
+        if notification_url:
+            session_id = uuid.uuid4().hex
+            auth_cookies = {}
+            for cookie_str in resp_auth.headers.get_list("set-cookie"):
+                cookie = _SimpleCookie()
+                cookie.load(cookie_str)
+                for key, morsel in cookie.items():
+                    auth_cookies[key] = morsel.value
+                    
+            auth_cookies["deviceId"] = device_id
+            
+            _login_sessions[session_id] = {
+                "user": user,
+                "password": password,
+                "cookies": auth_cookies,
+                "login_url": login_url,
+                "time": time.time()
+            }
+            return {
+                "ok": False,
+                "code": "need_2fa",
+                "notification_url": notification_url,
+                "session_id": session_id
+            }
+            
+        location = data.get("location")
+        if not location:
+            raise HTTPException(400, "登录成功但未返回 location")
+            
+        resp_sts = await client.get(location, headers=headers)
+        mimo_cookies = {}
+        for cookie in client.cookies.jar:
+            if "xiaomimimo.com" in cookie.domain:
+                mimo_cookies[cookie.name] = cookie.value
+                
+        service_token = mimo_cookies.get("serviceToken")
+        user_id_mimo = mimo_cookies.get("userId")
+        xiaomichatbot_ph = mimo_cookies.get("xiaomichatbot_ph")
+        
+        if not service_token or not user_id_mimo:
+            raise HTTPException(400, "SSO 兑换失败，未返回 serviceToken")
+            
+        if service_token.startswith('"') and service_token.endswith('"'):
+            service_token = service_token[1:-1]
+        if xiaomichatbot_ph and xiaomichatbot_ph.startswith('"') and xiaomichatbot_ph.endswith('"'):
+            xiaomichatbot_ph = xiaomichatbot_ph[1:-1]
+            
+        pass_token_val = mimo_cookies.get("passToken") or ""
+        if pass_token_val.startswith('"') and pass_token_val.endswith('"'):
+            pass_token_val = pass_token_val[1:-1]
+            
+        all_new_cookies = []
+        for k, v in mimo_cookies.items():
+            all_new_cookies.append({"name": k, "value": v, "domain": ".xiaomimimo.com" if k in ("serviceToken", "userId", "xiaomichatbot_ph") else ".xiaomi.com"})
+        all_new_cookies.append({"name": "deviceId", "value": device_id, "domain": ".account.xiaomi.com"})
+        
+        now = _dt.now().strftime("%m-%d %H:%M")
+        
+        try:
+            await _save_mimo_account(user_id_mimo, service_token, xiaomichatbot_ph, user, pass_token_val, all_new_cookies, now)
+        except Exception as e:
+            raise HTTPException(400, f"验证保存失败: {str(e)}")
+            
+        return {"ok": True, "user_id": user_id_mimo, "email": user}
+
+@router.post("/api/account/login-2fa-verify")
+async def login_2fa_verify(request: Login2faVerifyRequest, username: str = Depends(verify_admin)):
+    session_id = request.session_id
+    if session_id not in _login_sessions:
+        raise HTTPException(400, "会话已过期或不存在，请重新输入账号密码登录。")
+        
+    sess = _login_sessions[session_id]
+    user = sess["user"]
+    password = sess["password"]
+    auth_cookies = sess["cookies"]
+    login_url = sess["login_url"]
+    
+    _clean_expired_login_sessions()
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    
+    async with httpx.AsyncClient(follow_redirects=False) as client:
+        parsed_login_url = _urlparse(login_url)
+        query_params = _parse_qs(parsed_login_url.query)
+        
+        md5_pwd = _hashlib.md5(password.encode('utf-8')).hexdigest().upper()
+        
+        payload = {
+            "user": user,
+            "hash": md5_pwd,
+            "sid": "xiaomichatbot",
+            "callback": query_params.get("callback", [""])[0],
+            "_sign": query_params.get("_sign", [""])[0],
+            "qs": query_params.get("qs", [""])[0],
+            "_json": "true"
+        }
+        
+        login_auth_url = "https://account.xiaomi.com/pass/serviceLoginAuth2"
+        
+        resp_auth = await client.post(login_auth_url, data=payload, cookies=auth_cookies, headers=headers)
+        text = resp_auth.text
+        if text.startswith("&&&START&&&"):
+            text = text[11:]
+            
+        try:
+            data = json.loads(text)
+        except Exception:
+            raise HTTPException(500, f"解析 Xiaomi Auth 响应失败: {text[:200]}")
+            
+        code = data.get("code")
+        if code != 0:
+            notification_url = data.get("notificationUrl")
+            if notification_url:
+                return {
+                    "ok": False,
+                    "code": "need_2fa",
+                    "notification_url": notification_url,
+                    "session_id": session_id,
+                    "message": "尚未完成验证，请在浏览器中完成验证码输入后重试。"
+                }
+            raise HTTPException(400, f"登录失败: {data.get('description', '未知错误')}")
+            
+        location = data.get("location")
+        if not location:
+            raise HTTPException(400, "登录成功但未返回 location")
+            
+        resp_sts = await client.get(location, headers=headers)
+        mimo_cookies = {}
+        for cookie in client.cookies.jar:
+            if "xiaomimimo.com" in cookie.domain:
+                mimo_cookies[cookie.name] = cookie.value
+                
+        service_token = mimo_cookies.get("serviceToken")
+        user_id_mimo = mimo_cookies.get("userId")
+        xiaomichatbot_ph = mimo_cookies.get("xiaomichatbot_ph")
+        
+        if not service_token or not user_id_mimo:
+            raise HTTPException(400, "SSO 兑换失败，未返回 serviceToken")
+            
+        if service_token.startswith('"') and service_token.endswith('"'):
+            service_token = service_token[1:-1]
+        if xiaomichatbot_ph and xiaomichatbot_ph.startswith('"') and xiaomichatbot_ph.endswith('"'):
+            xiaomichatbot_ph = xiaomichatbot_ph[1:-1]
+            
+        pass_token_val = mimo_cookies.get("passToken") or ""
+        if pass_token_val.startswith('"') and pass_token_val.endswith('"'):
+            pass_token_val = pass_token_val[1:-1]
+            
+        all_new_cookies = []
+        for k, v in mimo_cookies.items():
+            all_new_cookies.append({"name": k, "value": v, "domain": ".xiaomimimo.com" if k in ("serviceToken", "userId", "xiaomichatbot_ph") else ".xiaomi.com"})
+        
+        device_id = auth_cookies.get("deviceId", "")
+        if device_id:
+            all_new_cookies.append({"name": "deviceId", "value": device_id, "domain": ".account.xiaomi.com"})
+            
+        now = _dt.now().strftime("%m-%d %H:%M")
+        
+        try:
+            await _save_mimo_account(user_id_mimo, service_token, xiaomichatbot_ph, user, pass_token_val, all_new_cookies, now)
+        except Exception as e:
+            raise HTTPException(400, f"验证保存失败: {str(e)}")
+            
+        _login_sessions.pop(session_id, None)
+        return {"ok": True, "user_id": user_id_mimo, "email": user}
+
+@router.post("/api/account/login-passport")
+async def login_passport(request: LoginPassportRequest, username: str = Depends(verify_admin)):
+    pass_token = request.passToken.strip()
+    user_id = request.userId.strip()
+    device_id = (request.deviceId or "").strip()
+    
+    if not pass_token or not user_id:
+        raise HTTPException(400, "缺少必填字段: passToken, userId")
+        
+    try:
+        mimo_data = await exchange_passport_to_mimo(pass_token, user_id, device_id)
+        now = _dt.now().strftime("%m-%d %H:%M")
+        
+        all_new_cookies = [
+            {"name": "passToken", "value": pass_token, "domain": ".account.xiaomi.com"},
+            {"name": "userId", "value": user_id, "domain": ".account.xiaomi.com"},
+            {"name": "deviceId", "value": mimo_data["deviceId"], "domain": ".account.xiaomi.com"},
+            {"name": "serviceToken", "value": mimo_data["serviceToken"], "domain": ".xiaomimimo.com"},
+            {"name": "xiaomichatbot_ph", "value": mimo_data["xiaomichatbot_ph"], "domain": ".xiaomimimo.com"},
+        ]
+        
+        await _save_mimo_account(
+            user_id=mimo_data["userId"],
+            service_token=mimo_data["serviceToken"],
+            xiaomichatbot_ph=mimo_data["xiaomichatbot_ph"],
+            email=f"passport_{user_id}",
+            pass_token=pass_token,
+            all_cookies=all_new_cookies,
+            now_str=now
+        )
+        return {"ok": True, "user_id": mimo_data["userId"]}
+    except Exception as e:
+        raise HTTPException(400, f"验证/兑换失败: {str(e)}")
 
 
 @router.post("/api/account/import-curl")

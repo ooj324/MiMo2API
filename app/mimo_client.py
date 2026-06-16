@@ -62,12 +62,23 @@ class MimoClient:
         }
 
     def _create_cookies(self) -> dict:
-        """创建Cookies"""
-        return {
-            "serviceToken": self.account.service_token,
-            "userId": self.account.user_id,
-            "xiaomichatbot_ph": self.account.xiaomichatbot_ph,
-        }
+        """创建Cookies，保留 accounts.json 中原有的其他可用 Cookie"""
+        cookies = {}
+        # 从 raw_data 恢复附加的 Cookie（例如设备特征或追踪标示）
+        if hasattr(self.account, "raw_data") and isinstance(self.account.raw_data, dict):
+            raw_cookies = self.account.raw_data.get("cookies", [])
+            if isinstance(raw_cookies, list):
+                for c in raw_cookies:
+                    if isinstance(c, dict) and "name" in c and "value" in c:
+                        cookies[c["name"]] = c["value"]
+                        
+        # 确保核心认证字段使用最新的属性值覆盖
+        cookies["serviceToken"] = self.account.service_token
+        cookies["userId"] = self.account.user_id
+        if self.account.xiaomichatbot_ph:
+            cookies["xiaomichatbot_ph"] = self.account.xiaomichatbot_ph
+            
+        return cookies
 
     def _create_request_body(self, query: str, thinking: bool, model: str = "mimo-v2-pro", multi_medias: list = None, attachments: list = None, conversation_id: str = None) -> dict:
         """创建请求体"""

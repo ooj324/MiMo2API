@@ -97,6 +97,7 @@ init_anthropic_batches(_anthropic_batch_dir)
 
 # 静态文件目录
 web_dir = Path(__file__).parent / "web"
+app.mount("/static", StaticFiles(directory=web_dir), name="static")
 
 # 管理页面由 routes.py 中的 router 处理（/ 和 /admin）
 
