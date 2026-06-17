@@ -7,3 +7,4 @@ app/responses.json
 accounts.json
 mimo_sessions.json
 *.bak
+server.log
