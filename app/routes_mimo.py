@@ -116,9 +116,14 @@ async def exchange_passport_to_mimo(pass_token: str, user_id: str, device_id: st
             raise Exception(f"STS 兑换失败: HTTP {resp_sts.status_code}")
 
         mimo_cookies = {}
+        for r in (resp, resp_ticket, resp_sts):
+            for cookie_str in r.headers.get_list("set-cookie"):
+                c = _SimpleCookie()
+                c.load(cookie_str)
+                for k, m in c.items():
+                    mimo_cookies[k] = m.value
         for cookie in client.cookies.jar:
-            if "xiaomimimo.com" in cookie.domain:
-                mimo_cookies[cookie.name] = cookie.value
+            mimo_cookies[cookie.name] = cookie.value
 
         service_token = mimo_cookies.get("serviceToken")
         user_id_mimo = mimo_cookies.get("userId")
@@ -368,9 +373,14 @@ async def login_password(request: LoginPasswordRequest, username: str = Depends(
         req_url, _, req_h = apply_resin_proxy(location, user, headers)
         resp_sts = await client.get(req_url, headers=req_h)
         mimo_cookies = {}
+        for r in (resp, resp_auth, resp_sts):
+            for cookie_str in r.headers.get_list("set-cookie"):
+                c = _SimpleCookie()
+                c.load(cookie_str)
+                for k, m in c.items():
+                    mimo_cookies[k] = m.value
         for cookie in client.cookies.jar:
-            if "xiaomimimo.com" in cookie.domain:
-                mimo_cookies[cookie.name] = cookie.value
+            mimo_cookies[cookie.name] = cookie.value
 
         service_token = mimo_cookies.get("serviceToken")
         user_id_mimo = mimo_cookies.get("userId")
@@ -472,9 +482,14 @@ async def login_2fa_verify(request: Login2faVerifyRequest, username: str = Depen
         req_url, _, req_h = apply_resin_proxy(location, user, headers)
         resp_sts = await client.get(req_url, headers=req_h)
         mimo_cookies = {}
+        for r in (resp_auth, resp_sts):
+            for cookie_str in r.headers.get_list("set-cookie"):
+                c = _SimpleCookie()
+                c.load(cookie_str)
+                for k, m in c.items():
+                    mimo_cookies[k] = m.value
         for cookie in client.cookies.jar:
-            if "xiaomimimo.com" in cookie.domain:
-                mimo_cookies[cookie.name] = cookie.value
+            mimo_cookies[cookie.name] = cookie.value
 
         service_token = mimo_cookies.get("serviceToken")
         user_id_mimo = mimo_cookies.get("userId")
