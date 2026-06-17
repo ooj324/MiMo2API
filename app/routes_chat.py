@@ -22,8 +22,7 @@ from .tool_sieve import StreamSieve
 from .usage_store import add_usage as _add_usage
 from .session_store import (
     get_or_create_session as _get_or_create_session,
-    update_tokens as _update_session_tokens,
-    update_fingerprint as _update_session_fingerprint,
+    commit_session_turn as _commit_session_turn,
     find_existing_session_account as _find_existing_session_account,
 )
 
@@ -274,8 +273,6 @@ async def chat_completions(
         conv_id, conv_is_new, matched_count = _get_or_create_session(
             account.user_id, request.messages, request.model
         )
-        # 立即用当前消息更新指纹
-        _update_session_fingerprint(account.user_id, conv_id, request.messages)
         
         # 剥离出所有的非 system 消息
         non_sys_messages = [m for m in request.messages if m.role != 'system']
@@ -305,7 +302,7 @@ async def chat_completions(
     if request.stream:
         return StreamingResponse(
             _stream_response(client, query, thinking, effective_model, tools_dict, multi_medias, passthrough=passthrough_mode,
-                             conv_id=conv_id, account_id=account.user_id),
+                             conv_id=conv_id, account_id=account.user_id, messages=request.messages),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache, no-transform",
@@ -323,11 +320,7 @@ async def chat_completions(
         if usage:
             _add_usage(request.model, usage.get("promptTokens", 0), usage.get("completionTokens", 0))
             if conv_id:
-                _update_session_tokens(account.user_id, conv_id, usage.get("promptTokens", 0))
-
-        if conv_id:
-            # 首次消息：记录真实指纹
-            _update_session_fingerprint(account.user_id, conv_id, request.messages)
+                _commit_session_turn(account.user_id, conv_id, request.messages, usage.get("promptTokens", 0))
 
         # 清理模型输出杂质
         content = _strip_tool_result_blocks(content)
@@ -379,6 +372,7 @@ async def _stream_response(
     tools: list = None, multi_medias: list = None,
     passthrough: bool = False,
     conv_id: str = None, account_id: str = None,
+    messages: list = None,
 ):
     """流式响应生成器。"""
     msg_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
@@ -494,8 +488,8 @@ async def _stream_response(
                 yield "data: [DONE]\n\n"
                 if last_usage:
                     _add_usage(model, last_usage.get("promptTokens", 0), last_usage.get("completionTokens", 0))
-                    if conv_id:
-                        _update_session_tokens(account_id, conv_id, last_usage.get("promptTokens", 0))
+                if conv_id and messages:
+                    _commit_session_turn(account_id, conv_id, messages, last_usage.get("promptTokens", 0) if last_usage else 0)
                 return
 
             # 无工具调用：content 已在流中发出，只需发 stop
@@ -503,8 +497,8 @@ async def _stream_response(
             yield "data: [DONE]\n\n"
             if last_usage:
                 _add_usage(model, last_usage.get("promptTokens", 0), last_usage.get("completionTokens", 0))
-                if conv_id:
-                    _update_session_tokens(account_id, conv_id, last_usage.get("promptTokens", 0))
+            if conv_id and messages:
+                _commit_session_turn(account_id, conv_id, messages, last_usage.get("promptTokens", 0) if last_usage else 0)
 
         else:
             # ═══════════════════════════════════════════════════
@@ -573,8 +567,8 @@ async def _stream_response(
             yield "data: [DONE]\n\n"
             if last_usage:
                 _add_usage(model, last_usage.get("promptTokens", 0), last_usage.get("completionTokens", 0))
-                if conv_id:
-                    _update_session_tokens(account_id, conv_id, last_usage.get("promptTokens", 0))
+            if conv_id and messages:
+                _commit_session_turn(account_id, conv_id, messages, last_usage.get("promptTokens", 0) if last_usage else 0)
 
     except httpx.ReadTimeout:
         # 连接读取超时 — 发送优雅结束

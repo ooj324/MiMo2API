@@ -1,279 +1,262 @@
-"""会话管理 — 消息指纹续接 MiMo conversationId
+"""会话管理 — 基于内存与 Blake2s 消息级哈希的快速匹配
 
-通过 SHA256 指纹检测消息连续性，复用 MiMo 后端会话，
-避免每次都生成新 conversationId 导致上下文丢失。
-
-参考实现：
-  GoblinHonest/mimo2api_mimoapi — session.ts / session-marker.ts
-  (https://github.com/GoblinHonest/mimo2api_mimoapi)
+采用 zai2api 类似的高级会话复用逻辑：
+1. 纯内存存储，不再写入文件，避免 I/O 阻塞。
+2. blake2s 消息级指纹，按单条消息哈希。
+3. 模糊匹配机制，兼容各类修改部分历史上下文的客户端。
+4. 两阶段提交：先找可用会话，上游 API 调用成功后再 commit 确认更新指纹。
 """
 
-import json
-import hashlib
 import time
 import uuid
-from pathlib import Path
+import hashlib
+import threading
+import json
+from typing import List, Dict, Any, Tuple, Optional
 
-SESSION_FILE = Path(__file__).parent.parent / "sessions.json"
+# --- 全局状态 ---
+_store: Dict[str, List[Dict[str, Any]]] = {}
+_lock = threading.RLock()
 
-# token 超限后强制清屏（MiMo 上下文 ~128K，留余量）
+# --- 配置 ---
 TOKEN_THRESHOLD = 150000
-# 会话 7 天过期
-SESSION_TTL = 3 * 86400
-# 每个账号最多保留的会话数
+SESSION_TTL = 3 * 86400  # 3 days
 MAX_SESSIONS_PER_ACCOUNT = 20
+MAX_CACHED_FINGERPRINTS = 10
 
 
-def _load() -> dict:
-    if not SESSION_FILE.exists():
-        return {}
-    try:
-        return json.loads(SESSION_FILE.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
+# --- 哈希指纹算法 ---
 
+def _fast_hash(data: str, length: int = 16) -> str:
+    """快速哈希：blake2s"""
+    return hashlib.blake2s(data.encode("utf-8"), digest_size=8).hexdigest()[:length]
 
-def _save(data: dict) -> None:
-    SESSION_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+def _message_fingerprint(message) -> str:
+    """生成单条消息的指纹（role + content）。"""
+    role = getattr(message, "role", "")
+    content = getattr(message, "content", "")
+    # 对列表内容（多模态）做简化处理：转为字符串
+    if isinstance(content, list):
+        try:
+            content = json.dumps(content, sort_keys=True)
+        except Exception:
+            content = str(content)
+    return _fast_hash(f"{role}:{content}")
 
-
-def _fingerprint(messages: list) -> str:
-    """计算消息列表的 SHA256 指纹。
-
-    只取最后 5 条非 system 消息，每条消息截断到前 200 字符。
-    与 GoblinHonest 的 calculateMessageFingerprint 策略一致。
-    """
+def _collect_fingerprints(messages: list) -> List[str]:
+    """收集消息列表末尾 N 条非 system 消息的指纹"""
     non_sys = [m for m in messages if getattr(m, 'role', '') != 'system']
-    recent = non_sys[-5:]
-    if not recent:
-        return ''
-    content = json.dumps([
-        {
-            "role": getattr(m, 'role', ''),
-            "content": str(getattr(m, 'content', ''))[:200],
-        }
-        for m in recent
-    ], sort_keys=True)
-    return hashlib.sha256(content.encode()).hexdigest()
+    fps = [_message_fingerprint(m) for m in non_sys]
+    return fps[-MAX_CACHED_FINGERPRINTS:]
 
-
-def _is_continuation(messages: list, stored_fingerprint: str) -> int:
-    """检查当前消息列表是否是存储在 fingerprint 中的会话的延续。
-
-    返回匹配到的非系统消息数量，若未匹配则返回 0。
+def _match_continuous_session(new_fps: List[str], cached_fps: List[str]) -> int:
+    """模糊匹配会话延续性。
+    
+    返回 matched_count (在新消息中匹配掉的非系统消息数)。
+    若未命中则返回 0。
     """
-    if not stored_fingerprint:
+    n = len(cached_fps)
+    if n == 0:
+        return 0
+    if len(new_fps) < n:
         return 0
 
-    non_sys = [m for m in messages if getattr(m, 'role', '') != 'system']
-    # 只有 1 条非 system 消息 → 新对话
-    if len(non_sys) < 2:
-        return 0
-
-    for i in range(len(non_sys), 0, -1):
-        slice_msgs = (
-            [m for m in messages if getattr(m, 'role', '') == 'system']
-            + non_sys[:i]
-        )
-        slice_fp = _fingerprint(slice_msgs)
-        if slice_fp == stored_fingerprint:
-            return i
+    overlap = new_fps[:n]
+    
+    # 模糊匹配策略：
+    # 3 条及以上：检查最后 3 条重叠，允许 1 条不匹配
+    if n >= 3:
+        matches = sum(1 for i in range(1, 4) if overlap[-i] == cached_fps[-i])
+        if matches >= 2:
+            return n
+    elif n > 0:
+        # 小于 3 条，要求全匹配
+        if overlap == cached_fps:
+            return n
 
     return 0
+
+
+# --- 内存存储操作 ---
+
+def _cleanup_expired_sync() -> None:
+    """同步清理过期会话（必须在获得锁的情况下调用）"""
+    now = time.time()
+    expired_keys = []
+    for key, sessions in _store.items():
+        valid_sessions = [s for s in sessions if now - s.get('last_used', 0) < SESSION_TTL]
+        if len(valid_sessions) != len(sessions):
+            _store[key] = valid_sessions
+        if not valid_sessions:
+            expired_keys.append(key)
+    for k in expired_keys:
+        del _store[k]
 
 
 def get_or_create_session(
     account_id: str,
     messages: list,
     model: str = "mimo-v2-pro",
-) -> tuple:
+) -> Tuple[str, bool, int]:
     """获取或创建会话。
-
+    
     Args:
-        account_id: 账号标识（如 user_id）
-        messages: 当前请求的消息列表
+        account_id: 账号标识
+        messages: 当前请求的完整消息列表
         model: 模型名
 
     Returns:
-        (conversation_id: str, is_new: bool, matched_count: int)
+        (conversation_id, is_new, matched_count)
         - conversation_id: MiMo 会话 ID（复用或新建）
         - is_new: True=新建会话, False=复用了现有会话
-        - matched_count: 复用时匹配到的历史非系统消息数量，用于截取增量消息。新建时为0。
+        - matched_count: 在新消息中复用了多少条非系统消息。新建为 0。
     """
-    db = _load()
     key = f"account_{account_id}"
-    sessions = db.get(key, [])
-    current_fp = _fingerprint(messages)
-
-    if not current_fp:
-        # 空消息 → 全新的会话
-        conv_id, is_new = _create_new(key, model, sessions, db)
-        return conv_id, is_new, 0
-
+    non_sys = [m for m in messages if getattr(m, 'role', '') != 'system']
+    new_fps = [_message_fingerprint(m) for m in non_sys]
+    
     now = time.time()
 
-    # 清理过期会话
-    sessions = [s for s in sessions if now - s.get('last_used', 0) < SESSION_TTL]
+    with _lock:
+        _cleanup_expired_sync()
+        sessions = _store.get(key, [])
 
-    # 尝试匹配现有会话
-    for s in sessions:
-        if s.get('model') != model:
-            continue
-        if not s.get('fingerprint'):
-            continue
+        if not new_fps:
+            conv_id, is_new = _create_new(key, model, sessions)
+            return conv_id, is_new, 0
 
-        match_idx = _is_continuation(messages, s['fingerprint'])
-        if match_idx > 0:
-            # token 超限检查
-            if s.get('prompt_tokens', 0) > TOKEN_THRESHOLD:
-                # 超限 → 清屏，跳出匹配创建新会话
+        # 从最新的会话开始倒序匹配，命中率更高
+        for s in reversed(sessions):
+            if s.get('model') != model:
+                continue
+            
+            cached_fps = s.get('fingerprints', [])
+            if not cached_fps:
                 continue
 
-            # 复用会话：更新指纹和最后使用时间
-            s['fingerprint'] = current_fp
-            s['last_used'] = now
-            _save({**db, key: sessions})
-            return s['conversation_id'], False, match_idx
+            match_count = _match_continuous_session(new_fps, cached_fps)
+            if match_count > 0:
+                # 命中连续会话
+                if s.get('prompt_tokens', 0) > TOKEN_THRESHOLD:
+                    # Token 超限 → 必须清屏，跳出匹配去新建
+                    continue
+                
+                s['last_used'] = now
+                return s['conversation_id'], False, match_count
 
-    # 没有匹配的会话 → 创建新会话
-    conv_id, is_new = _create_new(key, model, sessions, db)
-    return conv_id, is_new, 0
+        # 没有匹配的会话 → 创建新会话
+        conv_id, is_new = _create_new(key, model, sessions)
+        return conv_id, is_new, 0
 
 
-def _create_new(key: str, model: str, sessions: list, db: dict) -> tuple:
-    """创建新会话并持久化。"""
+def _create_new(key: str, model: str, sessions: List[Dict[str, Any]]) -> Tuple[str, bool]:
+    """创建新会话（必须在获得锁的情况下调用）"""
     now = time.time()
     conv_id = uuid.uuid4().hex[:32]
-    current_fp = ''  # 空指纹，首次使用时由 update_tokens 更新
 
     sessions.append({
         'conversation_id': conv_id,
-        'fingerprint': current_fp,
+        'fingerprints': [],  # 二阶段提交：首次为空，直到 commit_session_turn
         'prompt_tokens': 0,
         'model': model,
         'created': now,
         'last_used': now,
     })
 
-    # 限制每个账号的会话数
     if len(sessions) > MAX_SESSIONS_PER_ACCOUNT:
         sessions = sessions[-MAX_SESSIONS_PER_ACCOUNT:]
 
-    _save({**db, key: sessions})
+    _store[key] = sessions
     return conv_id, True
 
 
-def update_fingerprint(account_id: str, conversation_id: str, messages: list) -> None:
-    """首次响应后用真正的消息指纹更新会话。"""
-    db = _load()
+def commit_session_turn(account_id: str, conversation_id: str, messages: list, prompt_tokens: int) -> None:
+    """二阶段提交：在上游响应成功后，保存本次最新指纹。"""
     key = f"account_{account_id}"
-    sessions = db.get(key, [])
-    fp = _fingerprint(messages)
-    if not fp:
-        return
-    for s in sessions:
-        if s['conversation_id'] == conversation_id:
-            if not s.get('fingerprint'):
-                s['fingerprint'] = fp
-            break
-    _save({**db, key: sessions})
+    fps = _collect_fingerprints(messages)
+    
+    with _lock:
+        sessions = _store.get(key, [])
+        for s in sessions:
+            if s['conversation_id'] == conversation_id:
+                if fps:
+                    s['fingerprints'] = fps
+                if prompt_tokens:
+                    s['prompt_tokens'] = max(s.get('prompt_tokens', 0), prompt_tokens)
+                s['last_used'] = time.time()
+                break
 
 
-def update_tokens(account_id: str, conversation_id: str, prompt_tokens: int) -> None:
-    """更新会话的累积 token 计数。"""
-    if not prompt_tokens:
-        return
-    db = _load()
-    key = f"account_{account_id}"
-    sessions = db.get(key, [])
-    for s in sessions:
-        if s['conversation_id'] == conversation_id:
-            s['prompt_tokens'] = max(s.get('prompt_tokens', 0), prompt_tokens)
-            s['last_used'] = time.time()
-            break
-    _save({**db, key: sessions})
+def find_existing_session_account(messages: list, model: str) -> Optional[str]:
+    """遍历所有账号，查找是否存在延续此消息记录的未过期且未超限会话。"""
+    non_sys = [m for m in messages if getattr(m, 'role', '') != 'system']
+    if not non_sys:
+        return None
+        
+    new_fps = [_message_fingerprint(m) for m in non_sys]
+
+    with _lock:
+        _cleanup_expired_sync()
+        for key, sessions in _store.items():
+            if not key.startswith("account_"):
+                continue
+            account_id = key[8:]
+            # 倒序遍历提升命中率
+            for s in reversed(sessions):
+                if s.get('model') != model:
+                    continue
+                if s.get('prompt_tokens', 0) > TOKEN_THRESHOLD:
+                    continue
+                
+                cached_fps = s.get('fingerprints', [])
+                if _match_continuous_session(new_fps, cached_fps) > 0:
+                    return account_id
+                    
+    return None
 
 
 def get_expired_sessions(account_id: str = None, ttl: int = SESSION_TTL) -> list:
-    """获取过期的会话列表。
-
-    Args:
-        account_id: None=所有账号, str=指定账号
-        ttl: 多少秒未使用算过期
-
-    Returns:
-        [(account_label, conversation_id, model, days_ago), ...]
-    """
-    db = _load()
+    """获取过期的会话列表（配合页面管理端查看）。"""
     now = time.time()
     expired = []
 
-    keys = [f"account_{account_id}"] if account_id else list(db.keys())
-    for key in keys:
-        if not key.startswith("account_"):
-            continue
-        account_label = key[8:]  # strip "account_" prefix
-        for s in db.get(key, []):
-            age = now - s.get("last_used", s.get("created", now))
-            if age > ttl:
-                expired.append((
-                    account_label,
-                    s["conversation_id"],
-                    s.get("model", ""),
-                    round(age / 86400, 1),
-                ))
+    with _lock:
+        keys = [f"account_{account_id}"] if account_id else list(_store.keys())
+        for key in keys:
+            if not key.startswith("account_"):
+                continue
+            account_label = key[8:]
+            for s in _store.get(key, []):
+                age = now - s.get("last_used", s.get("created", now))
+                if age > ttl:
+                    expired.append((
+                        account_label,
+                        s["conversation_id"],
+                        s.get("model", ""),
+                        round(age / 86400, 1),
+                    ))
 
     return expired
 
 
 def remove_session(account_id: str, conversation_id: str) -> None:
     """从存储中移除指定会话。"""
-    db = _load()
     key = f"account_{account_id}"
-    sessions = db.get(key, [])
-    db[key] = [s for s in sessions if s.get("conversation_id") != conversation_id]
-    _save(db)
-
-
-def find_existing_session_account(messages: list, model: str) -> str | None:
-    """遍历所有账号，查找是否存在延续此消息记录的会话，若有则返回对应的 account_id。"""
-    db = _load()
-    current_fp = _fingerprint(messages)
-    if not current_fp:
-        return None
-        
-    now = time.time()
-    for key, sessions in db.items():
-        if not key.startswith("account_"):
-            continue
-        account_id = key[8:]
-        for s in sessions:
-            if s.get('model') != model:
-                continue
-            if not s.get('fingerprint'):
-                continue
-            
-            # 不考虑已经过期的
-            if now - s.get('last_used', 0) > SESSION_TTL:
-                continue
-                
-            # token 超限的也不要
-            if s.get('prompt_tokens', 0) > TOKEN_THRESHOLD:
-                continue
-
-            if _is_continuation(messages, s['fingerprint']) > 0:
-                return account_id
-    return None
+    with _lock:
+        sessions = _store.get(key, [])
+        _store[key] = [s for s in sessions if s.get("conversation_id") != conversation_id]
+        if not _store[key]:
+            del _store[key]
 
 
 def get_account_session_count(account_id: str) -> int:
     """获取指定账号的未过期且未超限的会话数量。"""
-    db = _load()
     key = f"account_{account_id}"
-    sessions = db.get(key, [])
-    now = time.time()
     count = 0
-    for s in sessions:
-        if now - s.get('last_used', 0) <= SESSION_TTL and s.get('prompt_tokens', 0) <= TOKEN_THRESHOLD:
-            count += 1
+    with _lock:
+        _cleanup_expired_sync()
+        sessions = _store.get(key, [])
+        for s in sessions:
+            if s.get('prompt_tokens', 0) <= TOKEN_THRESHOLD:
+                count += 1
     return count

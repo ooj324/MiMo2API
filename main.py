@@ -18,7 +18,7 @@ from app.auth import verify_admin
 # 创建FastAPI应用
 app = FastAPI(
     title="Mimo2API",
-    description="将小米 Mimo AI 转换为 OpenAI + Anthropic 兼容 API（Chat / Responses / Anthropic Messages）",
+    description="Mimo AI 2 API",
     version="2.3.6",
     docs_url=None,
     redoc_url=None,
@@ -53,40 +53,35 @@ async def startup_discover_models():
 
 
 def _cleanup_old_sessions():
-    """后台清理过期会话，每个删除间隔 10 秒。"""
+    """后台启动时清理：从远端拉取会话列表并全部清空。"""
     import time, asyncio
     async def _run():
         try:
-            from app.session_store import get_expired_sessions, remove_session
             from app.mimo_client import MimoClient
             from app.config import config_manager
-            expired = get_expired_sessions()
-            if not expired:
-                return
-            print(f"[Cleanup] Found {len(expired)} expired sessions, deleting with 10s delay...")
-            by_account = {}
-            for account_label, conv_id, model, days_ago in expired:
-                by_account.setdefault(account_label, []).append((conv_id, days_ago))
-            deleted = 0
-            for account_label, conv_items in by_account.items():
-                acc = None
-                for a in config_manager.config.mimo_accounts:
-                    if a.user_id == account_label:
-                        acc = a
-                        break
-                if not acc:
-                    continue
-                client = MimoClient(acc)
-                for conv_id, days_ago in conv_items:
-                    try:
-                        if await client.delete_conversations([conv_id]):
-                            remove_session(account_label, conv_id)
-                            deleted += 1
-                            print(f"[Cleanup] Deleted: {conv_id[:12]}... ({days_ago}d old)")
-                    except Exception:
-                        pass
-                    time.sleep(10)
-            print(f"[Cleanup] Done: {deleted}/{len(expired)}")
+            from app.session_store import _store, _lock
+            
+            for a in config_manager.config.mimo_accounts:
+                client = MimoClient(a)
+                # 拉取远端列表
+                resp_data = await client.get_conversations(page_num=1, page_size=50)
+                data_list = resp_data.get("dataList", [])
+                
+                conv_ids = [item.get("conversationId") for item in data_list if item.get("conversationId")]
+                
+                if conv_ids:
+                    print(f"[Cleanup] Found {len(conv_ids)} remote sessions for account {a.user_id}, deleting...")
+                    if await client.delete_conversations(conv_ids):
+                        print(f"[Cleanup] Deleted {len(conv_ids)} sessions for {a.user_id}")
+                        # 同步清空本地该账号缓存
+                        key = f"account_{a.user_id}"
+                        with _lock:
+                            if key in _store:
+                                del _store[key]
+                    else:
+                        print(f"[Cleanup] Failed to delete remote sessions for {a.user_id}")
+                    # 避免风控，加点延时
+                    time.sleep(2)
         except Exception as e:
             print(f"[Cleanup] Failed: {e}")
     asyncio.run(_run())

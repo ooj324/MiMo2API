@@ -2,7 +2,7 @@ var _lang=localStorage.getItem('mimo_lang')||'zh';
 var _I={zh:{
     "xiaomi":"小米账号","mimo":"MiMo 会话","curl":"cURL","cookie":"Cookie","login":"账号登录","apikey":"系统设置","usage":"用量统计",
     "parseCurl":"解析 cURL","parseFill":"解析填充","saveAcct":"保存为 MiMo 会话","verifyBtn":"验证中...",
-    "saved":"已保存","saveFail":"保存失败","reqFail":"请求失败","refresh":"刷新","testAll":"测试全部","cleanupSessions":"清理过期会话",
+    "saved":"已保存","saveFail":"保存失败","reqFail":"请求失败","refresh":"刷新","testAll":"测试全部","cleanupSessions":"清空远端会话",
     "noAccts":"暂无 MiMo 会话","valid":"有效","notVerified":"未验证","test":"测试","delete":"删除",
     "loadFail":"加载失败","testing":"测试中...","testFail":"测试失败","noAcctTest":"无会话可测试",
     "allTestDone":"有效","cleanup":"清理中...","cleanupFail":"清理失败: ","unknown":"未知",
@@ -20,6 +20,8 @@ var _I={zh:{
     "mimoDesc":"小米 MiMo 模型 OpenAI 兼容接口配置中心","keysSaved":"配置已保存","saving":"保存中...",
     "passthroughLabel":"工具透传模式 (Tool Passthrough)",
     "passthroughHint":"开启后将直接向 MiMo 模型嵌入原始 JSON Schema 工具定义，跳过通用格式指导说明书。适合 Roo Code / Cline 等对格式要求严格的智能体。",
+    "sessionReuseLabel":"开启长连接会话复用 (Session Reuse)",
+    "sessionReuseHint":"开启后将复用与模型服务器的 HTTP 长连接，有效提升请求速度。",
     "adminPwdLabel":"后台管理员密码",
     "noXiaomiAccts":"暂无小米账号，请在上方添加",
     "tblAccount":"账号","tblUid":"UID","tblToken":"Token","tblDevice":"设备 ID","tblCreated":"创建时间","tblActions":"操作","tblStatus":"状态","tblSource":"来源账号","tblSessions":"会话数量","tblHasPwd":"有密码","btnExchange":"兑换 MiMo","btnTest":"连通性测试","btnDelete":"移除"
@@ -45,6 +47,8 @@ en:{
     "mimoDesc":"Xiaomi MiMo OpenAI-compatible API Dashboard","keysSaved":"Config saved","saving":"Saving...",
     "passthroughLabel":"Tool Passthrough Mode",
     "passthroughHint":"Bypass format instructions and embed raw JSON Schema tool definitions directly. Ideal for agents like Roo Code / Cline.",
+    "sessionReuseLabel":"Enable HTTP Session Reuse",
+    "sessionReuseHint":"Reuse persistent HTTP connections with model servers to significantly improve response times.",
     "adminPwdLabel":"Admin Password",
     "noXiaomiAccts":"No Xiaomi accounts, please add above",
     "tblAccount":"Account","tblUid":"UID","tblToken":"Token","tblDevice":"Device ID","tblCreated":"Created At","tblActions":"Actions","tblStatus":"Status","tblSource":"Source Account","tblSessions":"Sessions","tblHasPwd":"Has Password","btnExchange":"Exchange MiMo","btnTest":"Test Connection","btnDelete":"Remove"
@@ -94,6 +98,7 @@ async function loadConfig() {
         cfg = await r.json();
         $id('apiKeys').value = cfg.api_keys || '';
         $id('passthroughToggle').checked = !!cfg.tools_passthrough;
+        $id('sessionReuseToggle').checked = !!cfg.session_reuse;
         $id('adminPassword').value = cfg.admin_password || '';
         $id('sessionLimit').value = cfg.session_limit_per_account || 10;
         $id('resinUrl').value = cfg.resin_url || '';
@@ -104,6 +109,7 @@ async function loadConfig() {
 async function saveKeys() {
     cfg.api_keys = $id('apiKeys').value;
     cfg.tools_passthrough = $id('passthroughToggle').checked;
+    cfg.session_reuse = $id('sessionReuseToggle').checked;
     cfg.admin_password = $id('adminPassword').value || 'admin';
     cfg.session_limit_per_account = parseInt($id('sessionLimit').value) || 10;
     cfg.resin_url = $id('resinUrl').value.trim();

@@ -46,8 +46,7 @@ from .utils import build_query_from_messages, extract_medias_from_messages, uplo
 from .tool_call import extract_tool_call, get_tool_names, clean_tool_text
 from .session_store import (
     get_or_create_session as _get_or_create_session,
-    update_tokens as _update_session_tokens,
-    update_fingerprint as _update_session_fingerprint,
+    commit_session_turn as _commit_session_turn,
 )
 from .usage_store import add_usage as _add_usage
 from .routes import (
@@ -464,10 +463,24 @@ async def anthropic_messages(
     if stream:
         async def _wrap():
             mimo_gen = client.stream_api(query, False, model, multi_medias=multi_medias, conversation_id=conv_id)
+            last_usage = None
+            async def interceptor():
+                nonlocal last_usage
+                async for ev in mimo_gen:
+                    if ev.get("type") == "usage":
+                        last_usage = ev.get("content", {})
+                    yield ev
+
             async for event in _anthropic_stream_think_wrapper(
-                mimo_gen, model, msg_id, tool_names=tool_names,
+                interceptor(), model, msg_id, tool_names=tool_names,
             ):
                 yield event
+            
+            if conv_id:
+                tokens = last_usage.get("promptTokens", 0) if last_usage else 0
+                _commit_session_turn(account.user_id, conv_id, msgs_as_objects, tokens)
+                if last_usage:
+                    _add_usage(model, last_usage.get("promptTokens", 0), last_usage.get("completionTokens", 0))
 
         return StreamingResponse(
             _wrap(),
@@ -489,7 +502,10 @@ async def anthropic_messages(
         # 保存用量
         if usage:
             _add_usage(model, usage.get("promptTokens", 0), usage.get("completionTokens", 0))
-            _update_session_tokens(account.user_id, conv_id, usage.get("promptTokens", 0))
+            if conv_id:
+                _commit_session_turn(account.user_id, conv_id, msgs_as_objects, usage.get("promptTokens", 0))
+        elif conv_id:
+            _commit_session_turn(account.user_id, conv_id, msgs_as_objects, 0)
 
         # 清理模型输出
         content = _strip_tool_result_blocks(content)

@@ -69,38 +69,40 @@ async def clear_usage(username: str = Depends(verify_admin)):
 
 @router.post("/api/cleanup")
 async def manual_cleanup(username: str = Depends(verify_admin)):
-    """手动触发过期会话清理。"""
+    """手动触发会话清理（从远端获取全部会话并清空）。"""
     try:
-        expired = _get_expired_sessions()
-        if not expired:
-            return {"ok": True, "msg": "没有过期会话", "deleted": 0}
-
-        print(f"[Cleanup] Found {len(expired)} expired sessions, deleting...")
+        from .session_store import _store, _lock
         deleted = 0
-        # 按账号分组
-        by_account = {}
-        for account_label, conv_id, model, days_ago in expired:
-            by_account.setdefault(account_label, []).append(conv_id)
+        total_found = 0
 
-        for account_label, conv_ids in by_account.items():
-            # 找到对应账号
-            acc = None
-            for a in config_manager.config.mimo_accounts:
-                if a.user_id == account_label:
-                    acc = a
-                    break
-            if not acc:
+        for a in config_manager.config.mimo_accounts:
+            client = MimoClient(a)
+            # 每次拉取最多 50 条最近的会话进行清理
+            resp_data = await client.get_conversations(page_num=1, page_size=50)
+            data_list = resp_data.get("dataList", [])
+            
+            if not data_list:
                 continue
 
-            client = MimoClient(acc)
-            for conv_id in conv_ids:
-                if await client.delete_conversations([conv_id]):
-                    _remove_session(account_label, conv_id)
-                    deleted += 1
-                    print(f"[Cleanup] Deleted: {conv_id[:12]}...")
+            conv_ids = [item.get("conversationId") for item in data_list if item.get("conversationId")]
+            total_found += len(conv_ids)
 
-        print(f"[Cleanup] Done: {deleted}/{len(expired)} deleted")
-        return {"ok": True, "msg": f"清理完成: {deleted}/{len(expired)}", "deleted": deleted}
+            if conv_ids:
+                if await client.delete_conversations(conv_ids):
+                    deleted += len(conv_ids)
+                    print(f"[Cleanup] Deleted {len(conv_ids)} remote sessions for account {a.user_id}")
+                    # 同步清空本地内存中该账号的所有缓存会话
+                    key = f"account_{a.user_id}"
+                    with _lock:
+                        if key in _store:
+                            del _store[key]
+                else:
+                    print(f"[Cleanup] Failed to delete remote sessions for account {a.user_id}")
+
+        if total_found == 0:
+            return {"ok": True, "msg": "远端没有可以清理的会话", "deleted": 0}
+
+        return {"ok": True, "msg": f"清理完成: 成功删除 {deleted}/{total_found} 个远端会话", "deleted": deleted}
     except Exception as e:
         return {"ok": False, "msg": str(e)}
 

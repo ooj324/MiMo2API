@@ -85,7 +85,7 @@
                     <div id="mimoAccounts"></div>
                     <div class="btn-group" style="margin-top: 20px;">
                         <button class="btn-success" onclick="testAllMimo()">测试全部有效性</button>
-                        <button class="btn-danger" onclick="cleanupSessions()">清理过期会话</button>
+                        <button class="btn-danger" onclick="cleanupSessions()">清空远端会话</button>
                         <button class="btn-outline" onclick="loadMimoAccounts()">刷新列表</button>
                     </div>
                 </div>
@@ -237,6 +237,19 @@
                         </label>
                         <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px;line-height:1.6;" data-i18n="passthroughHint">
                             开启后将直接向 MiMo 模型嵌入原始 JSON Schema 工具定义，跳过通用格式指导说明书。适合 Roo Code / Cline 等对格式要求严格的智能体。
+                        </div>
+                    </div>
+
+                    <div class="field" style="margin-top:16px; background: var(--bg-card); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
+                        <label class="toggle-row">
+                            <span class="toggle-label" data-i18n="sessionReuseLabel">开启长连接会话复用 (Session Reuse)</span>
+                            <label class="switch">
+                                <input type="checkbox" id="sessionReuseToggle">
+                                <span class="slider"></span>
+                            </label>
+                        </label>
+                        <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px;line-height:1.6;" data-i18n="sessionReuseHint">
+                            开启后将复用与模型服务器的 HTTP 长连接，有效提升请求速度。
                         </div>
                     </div>
                     

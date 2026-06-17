@@ -267,3 +267,41 @@ class MimoClient:
         except Exception as e:
             print(f"[Cleanup] MiMo delete error: {e}")
             return False
+
+    async def get_conversations(self, page_num: int = 1, page_size: int = 20) -> dict:
+        """获取 MiMo 服务端对话列表。
+
+        Args:
+            page_num: 页码
+            page_size: 每页数量
+
+        Returns:
+            成功时返回 data 字典，包含 total 和 dataList 等信息，失败返回空字典 {}
+        """
+        url = "https://aistudio.xiaomimimo.com/open-apis/chat/conversation/list"
+        url, proxy_kwargs, headers = apply_resin_proxy(url, self.account.user_id, self._create_headers())
+        body = {
+            "pageInfo": {
+                "pageNum": page_num,
+                "pageSize": page_size
+            }
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30.0, **proxy_kwargs) as client:
+                resp = await client.post(
+                    url,
+                    params={"xiaomichatbot_ph": self.account.xiaomichatbot_ph},
+                    headers=headers,
+                    cookies=self._create_cookies(),
+                    json=body,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("code") == 0:
+                        return data.get("data", {})
+                print(f"[ListConversations] MiMo list failed: HTTP {resp.status_code}")
+                return {}
+        except Exception as e:
+            print(f"[ListConversations] MiMo list error: {e}")
+            return {}
+
