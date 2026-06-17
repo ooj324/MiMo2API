@@ -18,6 +18,9 @@ def apply_resin_proxy(url: str, account_id: str, headers: dict = None, use_forwa
         - proxy_kwargs: 用于 httpx.AsyncClient 的 kwargs，如 {"proxy": "..."}
         - new_headers: 补充了 Resin Auth 头的新 Headers 字典
     """
+    if account_id and not str(account_id).startswith("mm2a:"):
+        account_id = f"mm2a:{account_id}"
+
     config = config_manager.config
     if not config.resin_url:
         return url, {}, headers or {}
@@ -60,6 +63,11 @@ async def inherit_lease(temp_account: str, stable_account: str):
     当账号临时标识 (如登录前的 email/phone) 获取到持久稳定标识 (user_id) 后，
     向 Resin 发送租约继承请求。
     """
+    if temp_account and not str(temp_account).startswith("mm2a:"):
+        temp_account = f"mm2a:{temp_account}"
+    if stable_account and not str(stable_account).startswith("mm2a:"):
+        stable_account = f"mm2a:{stable_account}"
+
     config = config_manager.config
     if not config.resin_url:
         return
