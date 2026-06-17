@@ -24,6 +24,8 @@ var _I={zh:{
     "noParsingHint":"开启后将彻底放弃在响应中提取和解析工具调用，将模型返回的原始 XML/JSON 原封不动地通过文本流式返回。适合完全接管工具解析的客户端。",
     "sessionReuseLabel":"开启长连接会话复用 (Session Reuse)",
     "sessionReuseHint":"开启后将复用与模型服务器的 HTTP 长连接，有效提升请求速度。",
+    "debugModeLabel":"开启终端调试日志 (Debug Mode)",
+    "debugModeHint":"开启后将在后台终端实时打印 MiMo 上游接口请求体及完整的 SSE 响应块，便于排查格式断流或工具调用异常等问题。",
     "adminPwdLabel":"后台管理员密码",
     "noXiaomiAccts":"暂无小米账号，请在上方添加",
     "tblAccount":"账号","tblUid":"UID","tblToken":"Token","tblDevice":"设备 ID","tblCreated":"创建时间","tblActions":"操作","tblStatus":"状态","tblSource":"来源账号","tblSessions":"会话数量","tblHasPwd":"有密码","btnExchange":"兑换 MiMo","btnTest":"连通性测试","btnDelete":"移除"
@@ -53,6 +55,8 @@ en:{
     "noParsingHint":"Disable internal tool call extraction and stream the raw XML/JSON output exactly as is. Ideal for clients handling tool parsing themselves.",
     "sessionReuseLabel":"Enable HTTP Session Reuse",
     "sessionReuseHint":"Reuse persistent HTTP connections with model servers to significantly improve response times.",
+    "debugModeLabel":"Enable Terminal Debug Logs (Debug Mode)",
+    "debugModeHint":"Enable this to print the raw MiMo upstream request bodies and full SSE response chunks to the backend terminal, useful for debugging format issues or tool call errors.",
     "adminPwdLabel":"Admin Password",
     "noXiaomiAccts":"No Xiaomi accounts, please add above",
     "tblAccount":"Account","tblUid":"UID","tblToken":"Token","tblDevice":"Device ID","tblCreated":"Created At","tblActions":"Actions","tblStatus":"Status","tblSource":"Source Account","tblSessions":"Sessions","tblHasPwd":"Has Password","btnExchange":"Exchange MiMo","btnTest":"Test Connection","btnDelete":"Remove"
