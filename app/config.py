@@ -66,6 +66,7 @@ class Config:
     tools_passthrough: bool = False
     session_limit_per_account: int = 10
     session_reuse: bool = True
+    debug_mode: bool = False
     resin_url: str = ""
     resin_platform_name: str = "Default"
 
@@ -85,6 +86,7 @@ class Config:
             "tools_passthrough": self.tools_passthrough,
             "session_limit_per_account": self.session_limit_per_account,
             "session_reuse": self.session_reuse,
+            "debug_mode": self.debug_mode,
             "resin_url": self.resin_url,
             "resin_platform_name": self.resin_platform_name,
         }
@@ -99,6 +101,7 @@ class Config:
             "tools_passthrough": self.tools_passthrough,
             "session_limit_per_account": self.session_limit_per_account,
             "session_reuse": self.session_reuse,
+            "debug_mode": self.debug_mode,
             "resin_url": self.resin_url,
             "resin_platform_name": self.resin_platform_name,
         }
@@ -127,6 +130,7 @@ class ConfigManager:
                         tools_passthrough=data.get('tools_passthrough', False),
                         session_limit_per_account=data.get('session_limit_per_account', 10),
                         session_reuse=data.get('session_reuse', True),
+                        debug_mode=data.get('debug_mode', False),
                         resin_url=data.get('resin_url', ''),
                         resin_platform_name=data.get('resin_platform_name', 'Default')
                     )

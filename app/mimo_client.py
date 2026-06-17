@@ -6,7 +6,7 @@ import httpx
 import traceback
 import random
 from typing import Optional, Tuple, AsyncIterator
-from .config import MimoAccount
+from .config import MimoAccount, config_manager
 from .resin import apply_resin_proxy
 
 
@@ -109,6 +109,8 @@ class MimoClient:
             (content, think_content, usage)
         """
         body = self._create_request_body(query, thinking, model, multi_medias, attachments, conversation_id)
+        if config_manager.config.debug_mode:
+            print(f"[DEBUG MiMo Request] {json.dumps(body, ensure_ascii=False)}")
         url, proxy_kwargs, headers = apply_resin_proxy(self.API_URL, self.account.user_id, self._create_headers())
 
         async with httpx.AsyncClient(timeout=self.TIMEOUT, **proxy_kwargs) as client:
@@ -130,6 +132,8 @@ class MimoClient:
             async for line in response.aiter_lines():
                 if line.startswith("data:"):
                     data = line[5:].strip()
+                    if config_manager.config.debug_mode:
+                        print(f"[DEBUG MiMo SSE] {data}")
                     try:
                         sse_data = json.loads(data)
                         if isinstance(sse_data, dict):
@@ -163,6 +167,8 @@ class MimoClient:
             SSE数据字典（仅 type=text 且有 content 的，已过滤 MiMo 原生前缀）
         """
         body = self._create_request_body(query, thinking, model, multi_medias, attachments, conversation_id)
+        if config_manager.config.debug_mode:
+            print(f"[DEBUG MiMo Stream Request] {json.dumps(body, ensure_ascii=False)}")
         url, proxy_kwargs, headers = apply_resin_proxy(self.API_URL, self.account.user_id, self._create_headers())
 
         chunk_count = 0
@@ -184,6 +190,8 @@ class MimoClient:
                     if not line.startswith("data:"):
                         continue
                     data = line[5:].strip()
+                    if config_manager.config.debug_mode:
+                        print(f"[DEBUG MiMo SSE Stream] {data}")
                     chunk_count += 1
                     try:
                         sse_data = json.loads(data)

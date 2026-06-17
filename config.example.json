@@ -3,5 +3,8 @@
   "admin_password": "admin",
   "tools_passthrough": false,
   "session_limit_per_account": 10,
-  "session_reuse": true
+  "session_reuse": true,
+  "debug_mode": false,
+  "resin_url": "",
+  "resin_platform_name": "Default"
 }

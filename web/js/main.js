@@ -99,6 +99,7 @@ async function loadConfig() {
         $id('apiKeys').value = cfg.api_keys || '';
         $id('passthroughToggle').checked = !!cfg.tools_passthrough;
         $id('sessionReuseToggle').checked = !!cfg.session_reuse;
+        $id('debugModeToggle').checked = !!cfg.debug_mode;
         $id('adminPassword').value = cfg.admin_password || '';
         $id('sessionLimit').value = cfg.session_limit_per_account || 10;
         $id('resinUrl').value = cfg.resin_url || '';
@@ -110,6 +111,7 @@ async function saveKeys() {
     cfg.api_keys = $id('apiKeys').value;
     cfg.tools_passthrough = $id('passthroughToggle').checked;
     cfg.session_reuse = $id('sessionReuseToggle').checked;
+    cfg.debug_mode = $id('debugModeToggle').checked;
     cfg.admin_password = $id('adminPassword').value || 'admin';
     cfg.session_limit_per_account = parseInt($id('sessionLimit').value) || 10;
     cfg.resin_url = $id('resinUrl').value.trim();
