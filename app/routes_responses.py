@@ -531,9 +531,10 @@ async def _do_response_chat(body: dict, account) -> tuple:
         has_thinking = True
 
     # 工具调用提取
+    tools_no_parsing = config_manager.config.tools_no_parsing
     tool_names = []
     tool_calls = None
-    if tools_dict:
+    if tools_dict and not tools_no_parsing:
         tool_names = get_tool_names(tools_dict)
         result = extract_tool_call(content, tool_names)
         if result:
@@ -665,7 +666,8 @@ async def _stream_response_events(body: dict, account):
         return output_index, None
 
     client = MimoClient(account)
-    has_tools = tools_dict is not None
+    tools_no_parsing = config_manager.config.tools_no_parsing
+    has_tools = (tools_dict is not None) and (not tools_no_parsing)
 
     try:
         if has_tools:
@@ -677,9 +679,11 @@ async def _stream_response_events(body: dict, account):
             )
             in_think = False
             buffer = ""
+            last_usage = None
 
             async for sse_data in client.stream_api(query, thinking, effective_model, multi_medias):
                 if sse_data.get("type") == "usage":
+                    last_usage = sse_data.get("content", {})
                     continue
                 chunk = sse_data.get("content", "")
                 if not chunk:
@@ -923,9 +927,11 @@ async def _stream_response_events(body: dict, account):
             # 无工具：简单流式
             in_think = False
             buffer = ""
+            last_usage = None
 
             async for sse_data in client.stream_api(query, thinking, effective_model, multi_medias):
                 if sse_data.get("type") == "usage":
+                    last_usage = sse_data.get("content", {})
                     continue
                 chunk = sse_data.get("content", "")
                 if not chunk:
@@ -1146,15 +1152,22 @@ async def _stream_response_events(body: dict, account):
             }
 
         # 用量估算
-        total_reasoning = "".join(reasoning_parts)
-        total_text = "".join(text_parts)
-        approx_completion = _count_tokens(total_reasoning + total_text)
-        approx_prompt = _count_tokens(query)
-        completion_record = {
-            "input_tokens": approx_prompt,
-            "output_tokens": approx_completion,
-            "total_tokens": approx_prompt + approx_completion,
-        }
+        if last_usage:
+            completion_record = {
+                "input_tokens": last_usage.get("promptTokens", 0),
+                "output_tokens": last_usage.get("completionTokens", 0),
+                "total_tokens": last_usage.get("promptTokens", 0) + last_usage.get("completionTokens", 0),
+            }
+        else:
+            total_reasoning = "".join(reasoning_parts)
+            total_text = "".join(text_parts)
+            approx_completion = _count_tokens(total_reasoning + total_text)
+            approx_prompt = _count_tokens(query)
+            completion_record = {
+                "input_tokens": approx_prompt,
+                "output_tokens": approx_completion,
+                "total_tokens": approx_prompt + approx_completion,
+            }
 
         completed_payload = dict(init_payload)
         completed_payload["status"] = "completed"
@@ -1164,6 +1177,9 @@ async def _stream_response_events(body: dict, account):
         if has_tools and tool_calls_map:
             completed_payload["status"] = "completed"
         yield {"type": "response.completed", "response": completed_payload}
+
+        if last_usage:
+            _add_usage(effective_model, last_usage.get("promptTokens", 0), last_usage.get("completionTokens", 0))
 
     except MimoApiError as e:
         failed_payload = dict(init_payload)

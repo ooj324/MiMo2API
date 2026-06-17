@@ -206,6 +206,22 @@ def _build_chunk(
                 d['reasoning_content'] = reasoning
     return f"data: {json.dumps(data)}\n\n"
 
+def _build_usage_chunk(msg_id: str, model: str, usage: dict, created: int = None) -> str:
+    """构建包含用量的结束 chunk。"""
+    usage_obj = OpenAIUsage(
+        prompt_tokens=usage.get("promptTokens", 0),
+        completion_tokens=usage.get("completionTokens", 0),
+        total_tokens=usage.get("promptTokens", 0) + usage.get("completionTokens", 0)
+    )
+    chunk = OpenAIResponse(
+        id=msg_id, object="chat.completion.chunk",
+        created=created if created is not None else int(time.time()),
+        model=model,
+        choices=[],
+        usage=usage_obj
+    )
+    return f"data: {json.dumps(chunk.dict(exclude_none=True))}\n\n"
+
 
 # ─── 聊天接口 ─────────────────────────────────────────────────
 
@@ -265,6 +281,7 @@ async def chat_completions(
 
     # 构建查询与会话管理
     passthrough_mode = request.passthrough or config_manager.config.tools_passthrough
+    tools_no_parsing = request.tools_no_parsing or config_manager.config.tools_no_parsing
     thinking = bool(request.reasoning_effort)
     client = MimoClient(account)
     
@@ -300,9 +317,13 @@ async def chat_completions(
 
     # 流式响应
     if request.stream:
+        include_usage = False
+        if request.stream_options and request.stream_options.include_usage:
+            include_usage = True
+
         return StreamingResponse(
-            _stream_response(client, query, thinking, effective_model, tools_dict, multi_medias, passthrough=passthrough_mode,
-                             conv_id=conv_id, account_id=account.user_id, messages=request.messages),
+            _stream_response(client, query, thinking, effective_model, None if tools_no_parsing else tools_dict, multi_medias, passthrough=passthrough_mode,
+                             conv_id=conv_id, account_id=account.user_id, messages=request.messages, include_usage=include_usage),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache, no-transform",
@@ -332,7 +353,7 @@ async def chat_completions(
         # 提取工具调用
         tool_names = []
         tool_calls = None
-        if tools_dict:
+        if tools_dict and not tools_no_parsing:
             tool_names = get_tool_names(tools_dict)
             result = extract_tool_call(content, tool_names)
             if result:
@@ -372,7 +393,7 @@ async def _stream_response(
     tools: list = None, multi_medias: list = None,
     passthrough: bool = False,
     conv_id: str = None, account_id: str = None,
-    messages: list = None,
+    messages: list = None, include_usage: bool = False,
 ):
     """流式响应生成器。"""
     msg_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
@@ -504,6 +525,8 @@ async def _stream_response(
                     yield _build_chunk(msg_id, model, created=created_t, tool_calls=[chunk2_tc])
 
                 yield _build_chunk(msg_id, model, created=created_t, finish_reason="tool_calls")
+                if include_usage and last_usage:
+                    yield _build_usage_chunk(msg_id, model, last_usage, created_t)
                 yield "data: [DONE]\n\n"
                 if last_usage:
                     _add_usage(model, last_usage.get("promptTokens", 0), last_usage.get("completionTokens", 0))
@@ -513,6 +536,8 @@ async def _stream_response(
 
             # 无工具调用：content 已在流中发出，只需发 stop
             yield _build_chunk(msg_id, model, created=created_t, finish_reason="stop")
+            if include_usage and last_usage:
+                yield _build_usage_chunk(msg_id, model, last_usage, created_t)
             yield "data: [DONE]\n\n"
             if last_usage:
                 _add_usage(model, last_usage.get("promptTokens", 0), last_usage.get("completionTokens", 0))
@@ -583,6 +608,8 @@ async def _stream_response(
                         yield _build_chunk(msg_id, model, created=created_t, content=clean)
 
             yield _build_chunk(msg_id, model, created=created_t, finish_reason="stop")
+            if include_usage and last_usage:
+                yield _build_usage_chunk(msg_id, model, last_usage, created_t)
             yield "data: [DONE]\n\n"
             if last_usage:
                 _add_usage(model, last_usage.get("promptTokens", 0), last_usage.get("completionTokens", 0))

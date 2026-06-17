@@ -242,6 +242,19 @@
 
                     <div class="field" style="margin-top:16px; background: var(--bg-card); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
                         <label class="toggle-row">
+                            <span class="toggle-label" data-i18n="noParsingLabel">彻底透传模式 (No Tool Parsing)</span>
+                            <label class="switch">
+                                <input type="checkbox" id="noParsingToggle">
+                                <span class="slider"></span>
+                            </label>
+                        </label>
+                        <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px;line-height:1.6;" data-i18n="noParsingHint">
+                            开启后将彻底放弃在响应中提取和解析工具调用，将模型返回的原始 XML/JSON 原封不动地通过文本流式返回。适合完全接管工具解析的客户端。
+                        </div>
+                    </div>
+
+                    <div class="field" style="margin-top:16px; background: var(--bg-card); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
+                        <label class="toggle-row">
                             <span class="toggle-label" data-i18n="sessionReuseLabel">开启长连接会话复用 (Session Reuse)</span>
                             <label class="switch">
                                 <input type="checkbox" id="sessionReuseToggle">

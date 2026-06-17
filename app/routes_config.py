@@ -55,13 +55,13 @@ async def test_account_endpoint(request: TestAccountRequest, username: str = Dep
 # ─── 用量统计 API ─────────────────────────────────────────────
 
 @router.get("/api/usage")
-async def usage_stats(username: str = Depends(verify_admin)):
+def usage_stats(username: str = Depends(verify_admin)):
     """返回用量统计：按模型分组 + 全部汇总。"""
     return _get_usage()
 
 
 @router.delete("/api/usage")
-async def clear_usage(username: str = Depends(verify_admin)):
+def clear_usage(username: str = Depends(verify_admin)):
     """清空全部用量统计数据。"""
     _clear_usage()
     return {"ok": True}

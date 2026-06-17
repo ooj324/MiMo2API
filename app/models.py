@@ -18,6 +18,10 @@ class OpenAITool(BaseModel):
     function: Dict[str, Any]
 
 
+class OpenAIStreamOptions(BaseModel):
+    """OpenAI 流式响应选项"""
+    include_usage: Optional[bool] = None
+
 class OpenAIRequest(BaseModel):
     """OpenAI请求"""
     model: str
@@ -29,6 +33,8 @@ class OpenAIRequest(BaseModel):
     tools: Optional[List[OpenAITool]] = None
     tool_choice: Optional[Any] = None
     passthrough: bool = False
+    tools_no_parsing: bool = False
+    stream_options: Optional[OpenAIStreamOptions] = None
 
 
 class OpenAIDelta(BaseModel):

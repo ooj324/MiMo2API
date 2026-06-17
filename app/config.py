@@ -64,6 +64,7 @@ class Config:
     xiaomi_accounts: List[XiaomiAccount] = None
     models: List[str] = None
     tools_passthrough: bool = False
+    tools_no_parsing: bool = False
     session_limit_per_account: int = 10
     session_reuse: bool = True
     debug_mode: bool = False
@@ -84,6 +85,7 @@ class Config:
             "admin_password": self.admin_password,
             "mimo_accounts": [acc.to_dict() for acc in self.mimo_accounts],
             "tools_passthrough": self.tools_passthrough,
+            "tools_no_parsing": self.tools_no_parsing,
             "session_limit_per_account": self.session_limit_per_account,
             "session_reuse": self.session_reuse,
             "debug_mode": self.debug_mode,
@@ -99,6 +101,7 @@ class Config:
             "api_keys": self.api_keys,
             "admin_password": self.admin_password,
             "tools_passthrough": self.tools_passthrough,
+            "tools_no_parsing": self.tools_no_parsing,
             "session_limit_per_account": self.session_limit_per_account,
             "session_reuse": self.session_reuse,
             "debug_mode": self.debug_mode,
@@ -128,6 +131,7 @@ class ConfigManager:
                         admin_password=data.get('admin_password', 'admin'),
                         models=data.get('models', []),
                         tools_passthrough=data.get('tools_passthrough', False),
+                        tools_no_parsing=data.get('tools_no_parsing', False),
                         session_limit_per_account=data.get('session_limit_per_account', 10),
                         session_reuse=data.get('session_reuse', True),
                         debug_mode=data.get('debug_mode', False),
@@ -370,6 +374,7 @@ class ConfigManager:
             self.config.api_keys = new_config.get('api_keys', 'sk-default')
             self.config.admin_password = new_config.get('admin_password', 'admin')
             self.config.tools_passthrough = new_config.get('tools_passthrough', False)
+            self.config.tools_no_parsing = new_config.get('tools_no_parsing', False)
             self.config.session_limit_per_account = new_config.get('session_limit_per_account', 10)
             self.config.session_reuse = new_config.get('session_reuse', True)
             self.config.resin_url = new_config.get('resin_url', '')

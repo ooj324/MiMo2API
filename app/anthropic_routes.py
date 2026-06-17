@@ -116,11 +116,11 @@ def _make_cb_stop(index: int) -> str:
     })
 
 
-def _make_message_delta(stop_reason: str = "end_turn") -> str:
+def _make_message_delta(stop_reason: str = "end_turn", usage: dict = None) -> str:
     return _make_sse("message_delta", {
         "type": "message_delta",
         "delta": {"stop_reason": stop_reason},
-        "usage": {"output_tokens": 0},
+        "usage": {"output_tokens": usage.get("completionTokens", 0) if usage else 0},
     })
 
 
@@ -145,6 +145,7 @@ class _StreamState:
         self.finished = False
         self.collected_tool_calls = []
         self.text_buffer = ""  # 累积全文用于工具调用检测
+        self.final_usage = None
 
 
 async def _anthropic_stream_think_wrapper(
@@ -220,6 +221,7 @@ async def _anthropic_stream_think_wrapper(
 
     async for ev in mimo_stream:
         if ev.get("type") == "usage":
+            st.final_usage = ev.get("content", {})
             continue
         chunk = ev.get("content", "")
         if not chunk:
@@ -350,7 +352,7 @@ async def _anthropic_stream_think_wrapper(
             yield _make_cb_stop(st.text_index)
             st.text_active = False
 
-    yield _make_message_delta(stop_reason)
+    yield _make_message_delta(stop_reason, st.final_usage)
     yield _make_message_stop()
 
 
@@ -456,7 +458,8 @@ async def anthropic_messages(
     )
 
     # ── 工具名（用于后续提取） ──
-    tool_names = get_tool_names(tools_dict) if tools_dict else None
+    tools_no_parsing = config_manager.config.tools_no_parsing
+    tool_names = get_tool_names(tools_dict) if (tools_dict and not tools_no_parsing) else None
 
     client = MimoClient(account)
 

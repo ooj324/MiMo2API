@@ -5,12 +5,16 @@ import threading
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
+# Default to UTC+8 (Beijing Time) for daily tracking
+TZ_UTC_8 = timezone(timedelta(hours=8))
+
+
 _USAGE_FILE = Path(__file__).parent.parent / "usage.json"
 _LOCK = threading.Lock()
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(TZ_UTC_8).strftime("%Y-%m-%d")
 
 
 def _load() -> dict:
@@ -94,7 +98,7 @@ def get_usage() -> dict:
     """返回用量统计：今天 / 本周 / 全部，按模型分组。"""
     data = _load()
     today = _today()
-    week_start = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    week_start = (datetime.now(TZ_UTC_8) - timedelta(days=7)).strftime("%Y-%m-%d")
 
     # 今天
     today_data = data.get("daily", {}).get(today, {})
@@ -105,8 +109,7 @@ def get_usage() -> dict:
     return {
         "today": {
             "models": today_data,
-            "total": _merge_days({today: today_data}).get("__total__", _zero_count()) if False else
-                     _sum_models(today_data),
+            "total": _sum_models(today_data),
         },
         "week": {
             "models": _merge_days(week_days),

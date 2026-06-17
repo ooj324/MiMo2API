@@ -98,7 +98,8 @@ async function loadConfig() {
         cfg = await r.json();
         $id('apiKeys').value = cfg.api_keys || '';
         $id('passthroughToggle').checked = !!cfg.tools_passthrough;
-        $id('sessionReuseToggle').checked = !!cfg.session_reuse;
+        $id('noParsingToggle').checked = !!cfg.tools_no_parsing;
+        $id('sessionReuseToggle').checked = cfg.session_reuse !== false;
         $id('debugModeToggle').checked = !!cfg.debug_mode;
         $id('adminPassword').value = cfg.admin_password || '';
         $id('sessionLimit').value = cfg.session_limit_per_account || 10;
@@ -110,6 +111,7 @@ async function loadConfig() {
 async function saveKeys() {
     cfg.api_keys = $id('apiKeys').value;
     cfg.tools_passthrough = $id('passthroughToggle').checked;
+    cfg.tools_no_parsing = $id('noParsingToggle').checked;
     cfg.session_reuse = $id('sessionReuseToggle').checked;
     cfg.debug_mode = $id('debugModeToggle').checked;
     cfg.admin_password = $id('adminPassword').value || 'admin';
