@@ -2,21 +2,27 @@
 
 import os
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.openapi.utils import get_openapi
 from pathlib import Path
 from app.routes import router, _do_discover
 from app.config import config_manager
 from app.anthropic_routes import router as anthropic_router
 from app.batch import init_batch_storage as init_anthropic_batches
+from app.auth import verify_admin
 
 # 创建FastAPI应用
 app = FastAPI(
     title="Mimo2API",
     description="将小米 Mimo AI 转换为 OpenAI + Anthropic 兼容 API（Chat / Responses / Anthropic Messages）",
-    version="2.3.6"
+    version="2.3.6",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None
 )
 
 # 添加CORS中间件
@@ -100,6 +106,23 @@ web_dir = Path(__file__).parent / "web"
 app.mount("/static", StaticFiles(directory=web_dir), name="static")
 
 # 管理页面由 routes.py 中的 router 处理（/ 和 /admin）
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_open_api_endpoint(username: str = Depends(verify_admin)):
+    return JSONResponse(get_openapi(title=app.title, version=app.version, description=app.description, routes=app.routes))
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html(username: str = Depends(verify_admin)):
+    return get_swagger_ui_html(openapi_url="/openapi.json", title=app.title + " - Swagger UI")
+
+@app.get("/redoc", include_in_schema=False)
+async def custom_redoc_html(username: str = Depends(verify_admin)):
+    return get_redoc_html(openapi_url="/openapi.json", title=app.title + " - ReDoc")
+
+@app.get("/health", tags=["System"])
+async def health_check():
+    """健康检查接口"""
+    return {"status": "ok"}
 
 
 def main():

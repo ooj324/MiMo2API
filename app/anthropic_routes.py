@@ -58,43 +58,7 @@ from .routes import (
 
 router = APIRouter()
 
-# ── Anthropic 模型名 → MiMo 内部模型名映射 ──
-# Claude Code CLI 等工具期望 Anthropic 风格的模型名，MiMo 原生名不兼容。
-# 此映射表在 Anthropic 端点请求时自动转换。
-ANTHROPIC_MODEL_ALIASES = {
-    # Claude 4.x 当前
-    "claude-opus-4-6": "mimo-v2.5-pro",
-    "claude-sonnet-4-6": "mimo-v2-pro",
-    "claude-haiku-4-5": "mimo-v2-flash",
-    # Claude 4.x 历史
-    "claude-sonnet-4-5": "mimo-v2-pro",
-    "claude-opus-4-1": "mimo-v2.5-pro",
-    "claude-opus-4-0": "mimo-v2.5-pro",
-    "claude-sonnet-4-0": "mimo-v2-flash",
-    # Claude 3.x
-    "claude-3-7-sonnet": "mimo-v2-pro",
-    "claude-3-5-sonnet": "mimo-v2-flash",
-    "claude-3-opus": "mimo-v2.5",
-    "claude-3-sonnet": "mimo-v2-flash",
-    "claude-3-haiku": "mimo-v2-flash",
-    # Search / nothinking 变体（MiMo 无联网/思考概念，映射到同一基础模型）
-    "claude-opus-4-6-search": "mimo-v2.5-pro",
-    "claude-sonnet-4-6-search": "mimo-v2-pro",
-    "claude-sonnet-4-6-nothinking": "mimo-v2-flash",
-    "claude-haiku-4-5-nothinking": "mimo-v2-flash",
-}
 
-
-def _resolve_anthropic_model(model: str) -> str:
-    """将 Anthropic 风格模型名映射为 MiMo 内部模型名。
-    
-    如果模型名已经是 MiMo 原生名（mimo-*），直接返回。
-    如果在映射表中，返回对应的 MiMo 名。
-    否则返回原值。
-    """
-    if not model or model.startswith("mimo-"):
-        return model
-    return ANTHROPIC_MODEL_ALIASES.get(model.lower(), model)
 
 # ─── 常量 ─────────────────────────────────────────────────────
 
@@ -407,7 +371,6 @@ async def anthropic_messages(
     body = await request.json()
     stream = body.get("stream", False)
     model = body.get("model", "mimo-v2-flash")
-    model = _resolve_anthropic_model(model)  # Anthropic 别名映射
     msg_id = _make_msg_id()
 
     # ── 转换格式：Anthropic → OpenAI ──
@@ -486,7 +449,7 @@ async def anthropic_messages(
                 multi_medias.append(media_obj)
 
     # ── 会话管理 ──
-    conv_id, conv_is_new = _get_or_create_session(
+    conv_id, conv_is_new, matched_count = _get_or_create_session(
         account.user_id, msgs_as_objects, model,
     )
 
@@ -626,7 +589,6 @@ async def anthropic_create_batch_ep(request: Request):
     body = await request.json()
     requests_data = body.get("requests", [])
     model = body.get("model", "mimo-v2-flash")
-    model = _resolve_anthropic_model(model)  # Anthropic 别名映射
     batch = _anthropic_create_batch(requests_data, model)
 
     # 异步处理每个请求
