@@ -7,6 +7,7 @@ import traceback
 import random
 from typing import Optional, Tuple, AsyncIterator
 from .config import MimoAccount
+from .resin import apply_resin_proxy
 
 
 class MimoApiError(Exception):
@@ -108,12 +109,13 @@ class MimoClient:
             (content, think_content, usage)
         """
         body = self._create_request_body(query, thinking, model, multi_medias, attachments, conversation_id)
+        url, proxy_kwargs, headers = apply_resin_proxy(self.API_URL, self.account.user_id, self._create_headers())
 
-        async with httpx.AsyncClient(timeout=self.TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=self.TIMEOUT, **proxy_kwargs) as client:
             response = await client.post(
-                self.API_URL,
+                url,
                 params={"xiaomichatbot_ph": self.account.xiaomichatbot_ph},
-                headers=self._create_headers(),
+                headers=headers,
                 cookies=self._create_cookies(),
                 json=body
             )
@@ -161,15 +163,16 @@ class MimoClient:
             SSE数据字典（仅 type=text 且有 content 的，已过滤 MiMo 原生前缀）
         """
         body = self._create_request_body(query, thinking, model, multi_medias, attachments, conversation_id)
+        url, proxy_kwargs, headers = apply_resin_proxy(self.API_URL, self.account.user_id, self._create_headers())
 
         chunk_count = 0
 
-        async with httpx.AsyncClient(timeout=self.TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=self.TIMEOUT, **proxy_kwargs) as client:
             async with client.stream(
                 "POST",
-                self.API_URL,
+                url,
                 params={"xiaomichatbot_ph": self.account.xiaomichatbot_ph},
-                headers=self._create_headers(),
+                headers=headers,
                 cookies=self._create_cookies(),
                 json=body
             ) as response:
@@ -246,12 +249,13 @@ class MimoClient:
         if not conversation_ids:
             return True
         url = "https://aistudio.xiaomimimo.com/open-apis/chat/conversation/delete"
+        url, proxy_kwargs, headers = apply_resin_proxy(url, self.account.user_id, self._create_headers())
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, **proxy_kwargs) as client:
                 resp = await client.post(
                     url,
                     params={"xiaomichatbot_ph": self.account.xiaomichatbot_ph},
-                    headers=self._create_headers(),
+                    headers=headers,
                     cookies=self._create_cookies(),
                     json=conversation_ids,
                 )

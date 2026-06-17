@@ -19,6 +19,7 @@ from pydantic import BaseModel as _BaseModel
 from .auth import verify_admin
 from .config import config_manager, MimoAccount, XiaomiAccount
 from .mimo_client import MimoClient, MimoApiError
+from .resin import apply_resin_proxy, inherit_lease
 
 router = APIRouter()
 
@@ -65,9 +66,11 @@ async def exchange_passport_to_mimo(pass_token: str, user_id: str, device_id: st
         "Accept": "*/*",
     }
 
-    async with httpx.AsyncClient(follow_redirects=False) as client:
+    _, proxy_kwargs, _ = apply_resin_proxy("", user_id)
+    async with httpx.AsyncClient(follow_redirects=False, **proxy_kwargs) as client:
         chat_url = "https://aistudio.xiaomimimo.com/open-apis/bot/chat"
-        resp = await client.post(chat_url, json={})
+        req_url, _, req_h = apply_resin_proxy(chat_url, user_id)
+        resp = await client.post(req_url, json={}, headers=req_h)
         try:
             login_url = resp.json().get("loginUrl")
         except Exception:
@@ -89,7 +92,8 @@ async def exchange_passport_to_mimo(pass_token: str, user_id: str, device_id: st
             parsed_url.fragment
         ))
 
-        resp_ticket = await client.get(json_login_url, cookies=passport_cookies, headers=headers)
+        req_url, _, req_h = apply_resin_proxy(json_login_url, user_id, headers)
+        resp_ticket = await client.get(req_url, cookies=passport_cookies, headers=req_h)
         ticket_text = resp_ticket.text
         if ticket_text.startswith("&&&START&&&"):
             ticket_text = ticket_text[11:]
@@ -106,7 +110,8 @@ async def exchange_passport_to_mimo(pass_token: str, user_id: str, device_id: st
         if not location:
             raise Exception("小米 Passport 未返回回调 location")
 
-        resp_sts = await client.get(location, headers=headers)
+        req_url, _, req_h = apply_resin_proxy(location, user_id, headers)
+        resp_sts = await client.get(req_url, headers=req_h)
         if resp_sts.status_code not in (200, 302, 307):
             raise Exception(f"STS 兑换失败: HTTP {resp_sts.status_code}")
 
@@ -283,9 +288,11 @@ async def login_password(request: LoginPasswordRequest, username: str = Depends(
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
 
-    async with httpx.AsyncClient(follow_redirects=False) as client:
+    _, proxy_kwargs, _ = apply_resin_proxy("", user)
+    async with httpx.AsyncClient(follow_redirects=False, **proxy_kwargs) as client:
         chat_url = "https://aistudio.xiaomimimo.com/open-apis/bot/chat"
-        resp = await client.post(chat_url, json={})
+        req_url, _, req_h = apply_resin_proxy(chat_url, user)
+        resp = await client.post(req_url, json={}, headers=req_h)
         try:
             login_url = resp.json().get("loginUrl")
         except Exception:
@@ -313,7 +320,8 @@ async def login_password(request: LoginPasswordRequest, username: str = Depends(
         device_id = f"wb_{uuid.uuid4().hex}"
         cookies = {"deviceId": device_id}
 
-        resp_auth = await client.post(login_auth_url, data=payload, cookies=cookies, headers=headers)
+        req_url, _, req_h = apply_resin_proxy(login_auth_url, user, headers)
+        resp_auth = await client.post(req_url, data=payload, cookies=cookies, headers=req_h)
         text = resp_auth.text
         if text.startswith("&&&START&&&"):
             text = text[11:]
@@ -357,7 +365,8 @@ async def login_password(request: LoginPasswordRequest, username: str = Depends(
         if not location:
             raise HTTPException(400, "登录成功但未返回 location")
 
-        resp_sts = await client.get(location, headers=headers)
+        req_url, _, req_h = apply_resin_proxy(location, user, headers)
+        resp_sts = await client.get(req_url, headers=req_h)
         mimo_cookies = {}
         for cookie in client.cookies.jar:
             if "xiaomimimo.com" in cookie.domain:
@@ -388,6 +397,7 @@ async def login_password(request: LoginPasswordRequest, username: str = Depends(
             all_new_cookies.append({"name": "deviceId", "value": device_id, "domain": ".account.xiaomi.com"})
 
             await _save_mimo_account(user_id_mimo, service_token, xiaomichatbot_ph, user, pass_token_val, all_new_cookies, now)
+            await inherit_lease(user, user_id_mimo)
         except Exception as e:
             raise HTTPException(400, f"验证保存失败: {str(e)}")
 
@@ -412,7 +422,8 @@ async def login_2fa_verify(request: Login2faVerifyRequest, username: str = Depen
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
 
-    async with httpx.AsyncClient(follow_redirects=False) as client:
+    _, proxy_kwargs, _ = apply_resin_proxy("", user)
+    async with httpx.AsyncClient(follow_redirects=False, **proxy_kwargs) as client:
         parsed_login_url = _urlparse(login_url)
         query_params = _parse_qs(parsed_login_url.query)
 
@@ -430,7 +441,8 @@ async def login_2fa_verify(request: Login2faVerifyRequest, username: str = Depen
 
         login_auth_url = "https://account.xiaomi.com/pass/serviceLoginAuth2"
 
-        resp_auth = await client.post(login_auth_url, data=payload, cookies=auth_cookies, headers=headers)
+        req_url, _, req_h = apply_resin_proxy(login_auth_url, user, headers)
+        resp_auth = await client.post(req_url, data=payload, cookies=auth_cookies, headers=req_h)
         text = resp_auth.text
         if text.startswith("&&&START&&&"):
             text = text[11:]
@@ -457,7 +469,8 @@ async def login_2fa_verify(request: Login2faVerifyRequest, username: str = Depen
         if not location:
             raise HTTPException(400, "登录成功但未返回 location")
 
-        resp_sts = await client.get(location, headers=headers)
+        req_url, _, req_h = apply_resin_proxy(location, user, headers)
+        resp_sts = await client.get(req_url, headers=req_h)
         mimo_cookies = {}
         for cookie in client.cookies.jar:
             if "xiaomimimo.com" in cookie.domain:
@@ -491,6 +504,7 @@ async def login_2fa_verify(request: Login2faVerifyRequest, username: str = Depen
 
         try:
             await _save_mimo_account(user_id_mimo, service_token, xiaomichatbot_ph, user, pass_token_val, all_new_cookies, now)
+            await inherit_lease(user, user_id_mimo)
         except Exception as e:
             raise HTTPException(400, f"验证保存失败: {str(e)}")
 

@@ -9,6 +9,7 @@ import json as _json
 import httpx
 from typing import Optional, List, Tuple, Dict, Any
 from .config import MimoAccount
+from .resin import apply_resin_proxy
 
 
 def parse_curl(curl_command: str) -> Optional[MimoAccount]:
@@ -184,13 +185,16 @@ async def upload_text_file_to_mimo(
         "Origin": "https://aistudio.xiaomimimo.com"
     }
 
-    async with httpx.AsyncClient(timeout=60) as client:
+    _, proxy_kwargs, _ = apply_resin_proxy("", account.user_id)
+    async with httpx.AsyncClient(timeout=60, **proxy_kwargs) as client:
         try:
             ph = account.xiaomichatbot_ph
+            info_url = f"https://aistudio.xiaomimimo.com/open-apis/resource/genUploadInfo?xiaomichatbot_ph={ph}"
+            req_url, _, req_h = apply_resin_proxy(info_url, account.user_id, headers)
             info_res = await client.post(
-                f"https://aistudio.xiaomimimo.com/open-apis/resource/genUploadInfo?xiaomichatbot_ph={ph}",
+                req_url,
                 json={"fileName": filename, "fileContentMd5": md5},
-                headers=headers
+                headers=req_h
             )
             info_data = info_res.json()
             if info_data.get("code") != 0 or not info_data.get("data"):
@@ -202,7 +206,8 @@ async def upload_text_file_to_mimo(
             object_name = info_data["data"]["objectName"]
 
             put_headers = {"Content-Type": "application/octet-stream", "content-md5": md5}
-            put_res = await client.put(upload_url, content=binary_data, headers=put_headers)
+            put_req_url, _, put_req_h = apply_resin_proxy(upload_url, account.user_id, put_headers)
+            put_res = await client.put(put_req_url, content=binary_data, headers=put_req_h)
             if put_res.status_code != 200:
                 print(f"[uploadTextFile] PUT failed: {put_res.status_code}")
                 return None
@@ -216,16 +221,18 @@ async def upload_text_file_to_mimo(
                 f"&model={model}"
                 f"&xiaomichatbot_ph={ph}"
             )
+            parse_headers = {
+                "Cookie": cookie,
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Referer": "https://aistudio.xiaomimimo.com/",
+                "Origin": "https://aistudio.xiaomimimo.com"
+            }
+            parse_req_url, _, parse_req_h = apply_resin_proxy(parse_url, account.user_id, parse_headers)
 
             parse_res = None
             for attempt in range(5):
                 try:
-                    resp = await client.post(parse_url, json={}, headers={
-                        "Cookie": cookie,
-                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                        "Referer": "https://aistudio.xiaomimimo.com/",
-                        "Origin": "https://aistudio.xiaomimimo.com"
-                    })
+                    resp = await client.post(parse_req_url, json={}, headers=parse_req_h)
                     data = resp.json()
                     if data.get("code") == 0 and data.get("data", {}).get("id"):
                         parse_res = data
@@ -292,13 +299,16 @@ async def upload_media_to_mimo(
         "Origin": "https://aistudio.xiaomimimo.com"
     }
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    _, proxy_kwargs, _ = apply_resin_proxy("", account.user_id)
+    async with httpx.AsyncClient(timeout=30, **proxy_kwargs) as client:
         try:
             ph = account.xiaomichatbot_ph
+            info_url = f"https://aistudio.xiaomimimo.com/open-apis/resource/genUploadInfo?xiaomichatbot_ph={ph}"
+            req_url, _, req_h = apply_resin_proxy(info_url, account.user_id, headers)
             info_res = await client.post(
-                f"https://aistudio.xiaomimimo.com/open-apis/resource/genUploadInfo?xiaomichatbot_ph={ph}",
+                req_url,
                 json={"fileName": file_name, "fileContentMd5": md5},
-                headers=headers
+                headers=req_h
             )
             info_data = info_res.json()
             if info_data.get("code") != 0 or not info_data.get("data"):
@@ -310,7 +320,8 @@ async def upload_media_to_mimo(
             object_name = info_data["data"]["objectName"]
 
             put_headers = {"Content-Type": "application/octet-stream", "content-md5": md5}
-            put_res = await client.put(upload_url, content=binary_data, headers=put_headers)
+            put_req_url, _, put_req_h = apply_resin_proxy(upload_url, account.user_id, put_headers)
+            put_res = await client.put(put_req_url, content=binary_data, headers=put_req_h)
             if put_res.status_code != 200:
                 print(f"[uploadMedia] PUT failed: {put_res.status_code}")
                 return None
@@ -324,16 +335,18 @@ async def upload_media_to_mimo(
                 f"&model={model}"
                 f"&xiaomichatbot_ph={ph}"
             )
+            parse_headers = {
+                "Cookie": cookie,
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Referer": "https://aistudio.xiaomimimo.com/",
+                "Origin": "https://aistudio.xiaomimimo.com"
+            }
+            parse_req_url, _, parse_req_h = apply_resin_proxy(parse_url, account.user_id, parse_headers)
 
             parse_res = None
             for attempt in range(5):
                 try:
-                    resp = await client.post(parse_url, json={}, headers={
-                        "Cookie": cookie,
-                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                        "Referer": "https://aistudio.xiaomimimo.com/",
-                        "Origin": "https://aistudio.xiaomimimo.com"
-                    })
+                    resp = await client.post(parse_req_url, json={}, headers=parse_req_h)
                     data = resp.json()
                     if data.get("code") == 0 and data.get("data", {}).get("id"):
                         parse_res = data

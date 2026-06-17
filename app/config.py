@@ -66,6 +66,8 @@ class Config:
     tools_passthrough: bool = False
     session_limit_per_account: int = 10
     session_reuse: bool = True
+    resin_url: str = ""
+    resin_platform_name: str = "Default"
 
     def __post_init__(self):
         if self.mimo_accounts is None:
@@ -83,6 +85,8 @@ class Config:
             "tools_passthrough": self.tools_passthrough,
             "session_limit_per_account": self.session_limit_per_account,
             "session_reuse": self.session_reuse,
+            "resin_url": self.resin_url,
+            "resin_platform_name": self.resin_platform_name,
         }
         if self.models:
             d["models"] = self.models
@@ -95,6 +99,8 @@ class Config:
             "tools_passthrough": self.tools_passthrough,
             "session_limit_per_account": self.session_limit_per_account,
             "session_reuse": self.session_reuse,
+            "resin_url": self.resin_url,
+            "resin_platform_name": self.resin_platform_name,
         }
         if self.models:
             d["models"] = self.models
@@ -120,7 +126,9 @@ class ConfigManager:
                         models=data.get('models', []),
                         tools_passthrough=data.get('tools_passthrough', False),
                         session_limit_per_account=data.get('session_limit_per_account', 10),
-                        session_reuse=data.get('session_reuse', True)
+                        session_reuse=data.get('session_reuse', True),
+                        resin_url=data.get('resin_url', ''),
+                        resin_platform_name=data.get('resin_platform_name', 'Default')
                     )
             else:
                 self.config = Config()
@@ -360,6 +368,8 @@ class ConfigManager:
             self.config.tools_passthrough = new_config.get('tools_passthrough', False)
             self.config.session_limit_per_account = new_config.get('session_limit_per_account', 10)
             self.config.session_reuse = new_config.get('session_reuse', True)
+            self.config.resin_url = new_config.get('resin_url', '')
+            self.config.resin_platform_name = new_config.get('resin_platform_name', 'Default')
             self.config.models = new_config.get('models', [])
             self.save_config_only()
 

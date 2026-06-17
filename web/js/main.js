@@ -1,9 +1,9 @@
 var _lang=localStorage.getItem('mimo_lang')||'zh';
 var _I={zh:{
     "xiaomi":"小米账号","mimo":"MiMo 会话","curl":"cURL","cookie":"Cookie","login":"账号登录","apikey":"系统设置","usage":"用量统计",
-    "parseCurl":"解析 cURL","parseFill":"解析填充 ↓","saveAcct":"保存为 MiMo 会话","verifyBtn":"验证中...",
+    "parseCurl":"解析 cURL","parseFill":"解析填充","saveAcct":"保存为 MiMo 会话","verifyBtn":"验证中...",
     "saved":"已保存","saveFail":"保存失败","reqFail":"请求失败","refresh":"刷新","testAll":"测试全部","cleanupSessions":"清理过期会话",
-    "noAccts":"暂无 MiMo 会话","valid":"✅ 有效","notVerified":"⚪ 未验证","test":"测试","delete":"删除",
+    "noAccts":"暂无 MiMo 会话","valid":"有效","notVerified":"未验证","test":"测试","delete":"删除",
     "loadFail":"加载失败","testing":"测试中...","testFail":"测试失败","noAcctTest":"无会话可测试",
     "allTestDone":"有效","cleanup":"清理中...","cleanupFail":"清理失败: ","unknown":"未知",
     "deleteConfirm":"确定删除？","deleted":"已删除","deleteFail":"删除失败",
@@ -20,13 +20,15 @@ var _I={zh:{
     "mimoDesc":"小米 MiMo 模型 OpenAI 兼容接口配置中心","keysSaved":"配置已保存","saving":"保存中...",
     "passthroughLabel":"工具透传模式 (Tool Passthrough)",
     "passthroughHint":"开启后将直接向 MiMo 模型嵌入原始 JSON Schema 工具定义，跳过通用格式指导说明书。适合 Roo Code / Cline 等对格式要求严格的智能体。",
-    "adminPwdLabel":"后台管理员密码"
+    "adminPwdLabel":"后台管理员密码",
+    "noXiaomiAccts":"暂无小米账号，请在上方添加",
+    "tblAccount":"账号","tblUid":"UID","tblToken":"Token","tblDevice":"设备 ID","tblCreated":"创建时间","tblActions":"操作","tblStatus":"状态","tblSource":"来源账号","tblSessions":"会话数量","tblHasPwd":"有密码","btnExchange":"兑换 MiMo","btnTest":"连通性测试","btnDelete":"移除"
 },
 en:{
     "xiaomi":"Xiaomi Accounts","mimo":"MiMo Sessions","curl":"cURL","cookie":"Cookie","login":"Login","apikey":"Settings","usage":"Usage",
-    "parseCurl":"Parse cURL","parseFill":"Parse & Fill ↓","saveAcct":"Save as MiMo Session","verifyBtn":"Verifying...",
+    "parseCurl":"Parse cURL","parseFill":"Parse & Fill","saveAcct":"Save as MiMo Session","verifyBtn":"Verifying...",
     "saved":"Saved","saveFail":"Save Failed","reqFail":"Request Failed","refresh":"Refresh","testAll":"Test All","cleanupSessions":"Cleanup Sessions",
-    "noAccts":"No MiMo sessions","valid":"✅ Active","notVerified":"⚪ Not Verified","test":"Test","delete":"Delete",
+    "noAccts":"No MiMo sessions","valid":"Active","notVerified":"Not Verified","test":"Test","delete":"Delete",
     "loadFail":"Load Failed","testing":"Testing...","testFail":"Test Failed","noAcctTest":"No sessions to test",
     "allTestDone":"valid","cleanup":"Cleaning...","cleanupFail":"Cleanup failed: ","unknown":"unknown",
     "deleteConfirm":"Delete this?","deleted":"Deleted","deleteFail":"Delete Failed",
@@ -43,10 +45,12 @@ en:{
     "mimoDesc":"Xiaomi MiMo OpenAI-compatible API Dashboard","keysSaved":"Config saved","saving":"Saving...",
     "passthroughLabel":"Tool Passthrough Mode",
     "passthroughHint":"Bypass format instructions and embed raw JSON Schema tool definitions directly. Ideal for agents like Roo Code / Cline.",
-    "adminPwdLabel":"Admin Password"
+    "adminPwdLabel":"Admin Password",
+    "noXiaomiAccts":"No Xiaomi accounts, please add above",
+    "tblAccount":"Account","tblUid":"UID","tblToken":"Token","tblDevice":"Device ID","tblCreated":"Created At","tblActions":"Actions","tblStatus":"Status","tblSource":"Source Account","tblSessions":"Sessions","tblHasPwd":"Has Password","btnExchange":"Exchange MiMo","btnTest":"Test Connection","btnDelete":"Remove"
 }};
 function _(k){return (_I[_lang]||_I.zh)[k]||k}
-function toggleLang(){_lang=_lang==='zh'?'en':'zh';localStorage.setItem('mimo_lang',_lang);$id('langBtn').textContent=_lang==='zh'?'🌐 EN':'🌐 中';applyI18n()}
+function toggleLang(){_lang=_lang==='zh'?'en':'zh';localStorage.setItem('mimo_lang',_lang);$id('langBtn').textContent=_lang==='zh'?'EN':'中文';applyI18n()}
 function applyI18n(){
     document.querySelectorAll('[data-i18n]').forEach(function(el){var k=el.getAttribute('data-i18n');if(k)el.textContent=_(k)});
     document.querySelectorAll('[data-i18n-ph]').forEach(function(el){var k=el.getAttribute('data-i18n-ph');if(k)el.placeholder=_(k)});
@@ -55,7 +59,7 @@ function applyI18n(){
     var tkeys=['xiaomi','mimo','login','curl','cookie','apikey','usage'];
     for(var i=0;i<tkeys.length&&i<tabs.length;i++)tabs[i].textContent=_(tkeys[i])
 }
-document.addEventListener('DOMContentLoaded',function(){$id('langBtn').textContent=_lang==='zh'?'🌐 EN':'🌐 中';applyI18n()});
+document.addEventListener('DOMContentLoaded',function(){$id('langBtn').textContent=_lang==='zh'?'EN':'中文';applyI18n()});
 
 let cfg = { api_keys: '', mimo_accounts: [], session_limit_per_account: 10 }, parsed = null;
 
@@ -92,6 +96,8 @@ async function loadConfig() {
         $id('passthroughToggle').checked = !!cfg.tools_passthrough;
         $id('adminPassword').value = cfg.admin_password || '';
         $id('sessionLimit').value = cfg.session_limit_per_account || 10;
+        $id('resinUrl').value = cfg.resin_url || '';
+        $id('resinPlatformName').value = cfg.resin_platform_name || 'Default';
     } catch (e) {}
 }
 
@@ -100,6 +106,8 @@ async function saveKeys() {
     cfg.tools_passthrough = $id('passthroughToggle').checked;
     cfg.admin_password = $id('adminPassword').value || 'admin';
     cfg.session_limit_per_account = parseInt($id('sessionLimit').value) || 10;
+    cfg.resin_url = $id('resinUrl').value.trim();
+    cfg.resin_platform_name = $id('resinPlatformName').value.trim() || 'Default';
     try {
         await fetch('/api/config', {
             method: 'POST',
@@ -124,30 +132,52 @@ async function loadXiaomiAccounts() {
         const d = await r.json();
         const el = $id('xiaomiAccounts');
         if (!d.accounts || !d.accounts.length) {
-            el.innerHTML = '<div class="empty"><div style="font-size:40px;margin-bottom:10px;opacity:0.5">🔑</div>暂无小米账号，请在上方添加</div>';
+            el.innerHTML = `<div class="empty">${_('noXiaomiAccts')}</div>`;
             return;
         }
-        el.innerHTML = d.accounts.map((a, i) => `
-            <div class="account">
-                <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
-                    <div class="info-line" style="margin-bottom:0;">
-                        <span class="status-dot" style="color:#818cf8"></span>
-                        <b>${a.email || 'UID: ' + a.user_id}</b>
-                        ${a.has_password ? '<span class="badge badge-valid" style="background:rgba(129,140,248,0.15);color:#a5b4fc;border-color:rgba(129,140,248,0.3)">有密码</span>' : ''}
+        let html = `
+            <div class="datagrid-scroll">
+                <table class="datagrid">
+                    <thead>
+                        <tr>
+                            <th>${_('tblAccount')}</th>
+                            <th>${_('tblUid')}</th>
+                            <th>${_('tblToken')}</th>
+                            <th>${_('tblDevice')}</th>
+                            <th>${_('tblCreated')}</th>
+                            <th>${_('tblActions')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        html += d.accounts.map((a, i) => `
+            <tr>
+                <td>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span>${a.email || 'UID: ' + a.user_id}</span>
+                        ${a.has_password ? `<span class="badge badge-valid" style="background:rgba(129,140,248,0.15);color:#a5b4fc;border-color:rgba(129,140,248,0.3)">${_('tblHasPwd')}</span>` : ''}
                     </div>
-                </div>
-                <div class="info-line" style="font-size:12px;"><b>UID</b> ${a.user_id}</div>
-                <div class="info-line" style="font-size:12px;"><b>Token</b> <code>${a.pass_token_masked}</code></div>
-                ${a.device_id ? `<div class="info-line" style="font-size:12px;opacity:0.7"><b>Device</b> ${a.device_id}</div>` : ''}
-                ${a.created_at ? `<div class="info-line" style="font-size:11px;opacity:0.5">${a.created_at}</div>` : ''}
-                <div class="actions">
-                    <button class="btn-success" style="padding:6px 14px; font-size:12px" onclick="exchangeXiaomi(${i})">🔄 兑换 MiMo</button>
-                    <button class="btn-danger" style="margin-left:auto; background:transparent; color:#fb7185; border:1px solid rgba(251, 113, 133, 0.3);" onclick="delXiaomi(${i})">移除</button>
-                </div>
-            </div>
+                </td>
+                <td>${a.user_id}</td>
+                <td><code>${a.pass_token_masked}</code></td>
+                <td><span style="opacity:0.7">${a.device_id || '-'}</span></td>
+                <td><span style="opacity:0.5; font-size:12px;">${a.created_at || '-'}</span></td>
+                <td>
+                    <div class="actions">
+                        <button class="btn-success" style="padding:6px 12px; font-size:12px" onclick="exchangeXiaomi(${i})">${_('btnExchange')}</button>
+                        <button class="btn-danger" style="padding:6px 12px; font-size:12px; background:transparent; color:#fb7185; border:1px solid rgba(251, 113, 133, 0.3);" onclick="delXiaomi(${i})">${_('btnDelete')}</button>
+                    </div>
+                </td>
+            </tr>
         `).join('');
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        el.innerHTML = html;
     } catch (e) {
-        $id('xiaomiAccounts').innerHTML = '<div class="empty" style="color:#fb7185">加载失败</div>';
+        $id('xiaomiAccounts').innerHTML = `<div class="empty" style="color:#fb7185">${_('loadFail')}</div>`;
     }
 }
 
@@ -185,18 +215,18 @@ async function delXiaomi(i) {
 
 async function exchangeXiaomi(i) {
     const btn = event.target;
-    btn.disabled = true; btn.textContent = '兑换中...';
+    btn.disabled = true; btn.textContent = _lang === 'zh' ? '兑换中...' : 'Exchanging...';
     try {
         const r = await fetch('/api/xiaomi-accounts/' + i + '/exchange', { method: 'POST' });
         const d = await r.json();
         if (d.ok) {
-            toast('✅ 兑换成功！');
+            toast(_lang === 'zh' ? '兑换成功！' : 'Exchanged successfully!');
             loadXiaomiAccounts();
         } else {
-            toast('❌ ' + (d.error || '兑换失败'), true);
+            toast(d.error || (_lang === 'zh' ? '兑换失败' : 'Exchange failed'), true);
         }
     } catch (e) { toast('请求失败', true); }
-    btn.disabled = false; btn.textContent = '🔄 兑换 MiMo';
+    btn.disabled = false; btn.textContent = _('btnExchange');
 }
 
 async function exchangeAllXiaomi() {
@@ -254,71 +284,95 @@ async function loadMimoAccounts() {
         const d = await r.json();
         const el = $id('mimoAccounts');
         if (!d.accounts || !d.accounts.length) {
-            el.innerHTML = '<div class="empty"><div style="font-size:40px;margin-bottom:10px;opacity:0.5">🤖</div>暂无 MiMo 会话，请通过小米账号兑换或手动导入</div>';
+            el.innerHTML = `<div class="empty">${_('noAccts')}</div>`;
             return;
         }
         const limit = parseInt($id('sessionLimit').value) || 10;
-        el.innerHTML = d.accounts.map((a, i) => {
-            const sessionPct = Math.min(100, Math.round((a.active_sessions || 0) / limit * 100));
+        let html = `
+            <div class="datagrid-scroll">
+                <table class="datagrid">
+                    <thead>
+                        <tr>
+                            <th>${_('tblStatus')}</th>
+                            <th>${_('tblAccount')}</th>
+                            <th>${_('tblUid')}</th>
+                            <th>${_('tblToken')}</th>
+                            <th>${_('tblSource')}</th>
+                            <th>${_('tblSessions')}</th>
+                            <th>${_('tblActions')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        html += d.accounts.map((a, i) => {
             const isOverload = (a.active_sessions || 0) >= limit;
             return `
-            <div class="account">
-                <div style="display:flex; justify-content:space-between; margin-bottom: 12px;">
-                    <div class="info-line" style="margin-bottom:0;">
-                        <span class="status-dot" style="color:${a.is_valid ? '#4ade80' : '#fb7185'}"></span>
-                        <b>${a.email || 'UID: ' + a.user_id}</b>
-                        <span class="badge ${a.is_valid ? 'badge-valid' : 'badge-invalid'}">${a.is_valid ? 'Active' : 'Error'}</span>
-                    </div>
-                    <div style="font-size: 11px; color: var(--text-muted); background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 10px;">
-                        会话: <span style="color: ${isOverload ? '#fb7185' : '#e2e8f0'}; font-weight: bold;">${a.active_sessions || 0}</span> / ${limit}
-                    </div>
-                </div>
-                <div class="info-line" style="font-size:12px;"><b>Token</b> <code>${a.token_masked}</code></div>
-                ${a.source_account ? `<div class="info-line" style="font-size:12px;opacity:0.7"><b>来源账号</b> ${a.source_account}</div>` : ''}
-                ${a.email ? `<div class="info-line" style="font-size:12px;opacity:0.7"><b>UID</b> ${a.user_id}</div>` : ''}
-                <div class="actions">
-                    <button class="btn-outline" style="padding:6px 14px; font-size:12px" onclick="testMimo(${i})">连通性测试</button>
-                    <button class="btn-danger" style="margin-left:auto; background:transparent; color:#fb7185; border:1px solid rgba(251, 113, 133, 0.3);" onclick="delMimo(${i})">移除</button>
-                </div>
+                <tr>
+                    <td>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span class="status-dot" style="background-color:${a.is_valid ? '#4ade80' : '#fb7185'}; width:8px; height:8px; border-radius:50%; display:inline-block; box-shadow:0 0 8px ${a.is_valid ? '#4ade80' : '#fb7185'}"></span>
+                            <span class="badge ${a.is_valid ? 'badge-valid' : 'badge-invalid'}" style="font-size:11px;">${a.is_valid ? 'Active' : 'Error'}</span>
+                        </div>
+                    </td>
+                    <td><b>${a.email || 'UID: ' + a.user_id}</b></td>
+                    <td>${a.user_id || '-'}</td>
+                    <td><code>${a.token_masked}</code></td>
+                    <td><span style="opacity:0.7">${a.source_account || '-'}</span></td>
+                    <td>
+                        <span style="color: ${isOverload ? '#fb7185' : '#e2e8f0'}; font-weight: bold;">${a.active_sessions || 0}</span> / ${limit}
+                    </td>
+                    <td>
+                        <div class="actions">
+                            <button class="btn-outline" style="padding:6px 12px; font-size:12px" onclick="testMimo(${i})">${_('btnTest')}</button>
+                            <button class="btn-danger" style="padding:6px 12px; font-size:12px; background:transparent; color:#fb7185; border:1px solid rgba(251, 113, 133, 0.3);" onclick="delMimo(${i})">${_('btnDelete')}</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+        html += `
+                    </tbody>
+                </table>
             </div>
-        `}).join('');
+        `;
+        el.innerHTML = html;
     } catch (e) {
-        $id('mimoAccounts').innerHTML = '<div class="empty" style="color:#fb7185">数据加载失败</div>';
+        $id('mimoAccounts').innerHTML = `<div class="empty" style="color:#fb7185">${_('loadFail')}</div>`;
     }
 }
 
 async function testMimo(i) {
     const btn = event.target;
-    btn.disabled = true; btn.textContent = '测试中...';
+    btn.disabled = true; btn.textContent = _lang === 'zh' ? '测试中...' : 'Testing...';
     try {
         const r = await fetch('/api/accounts/' + i + '/test', { method: 'POST' });
         const d = await r.json();
-        if (d.ok) { toast('✅ 连接成功'); loadMimoAccounts(); }
-        else toast('❌ ' + d.error, true);
+        if (d.ok) { toast(_lang === 'zh' ? '连接成功' : 'Connection successful'); loadMimoAccounts(); }
+        else toast((_lang === 'zh' ? '连接失败: ' : 'Connection failed: ') + d.error, true);
     } catch (e) { toast(_('testFail'), true); }
-    btn.disabled = false; btn.textContent = '连通性测试';
+    btn.disabled = false; btn.textContent = _('btnTest');
 }
 
 async function testAllMimo() {
     const btn = event.target;
-    btn.disabled = true; btn.textContent = '测试中...';
+    btn.disabled = true; btn.textContent = _lang === 'zh' ? '测试中...' : 'Testing...';
     try {
         const r = await fetch('/api/accounts');
         const d = await r.json();
-        if (!d.accounts || !d.accounts.length) { toast(_('noAcctTest'), true); btn.disabled = false; btn.textContent = '测试全部有效性'; return; }
+        if (!d.accounts || !d.accounts.length) { toast(_('noAcctTest'), true); btn.disabled = false; btn.textContent = _lang === 'zh' ? '测试全部有效性' : 'Test All Status'; return; }
         let ok = 0;
         for (let i = 0; i < d.accounts.length; i++) {
-            btn.textContent = '测试 (' + (i + 1) + '/' + d.accounts.length + ')';
+            btn.textContent = (_lang === 'zh' ? '测试 (' : 'Testing (') + (i + 1) + '/' + d.accounts.length + ')';
             try {
                 const r2 = await fetch('/api/accounts/' + i + '/test', { method: 'POST' });
                 const d2 = await r2.json();
                 if (d2.ok) ok++;
             } catch (e) {}
         }
-        toast(ok + '/' + d.accounts.length + ' 会话测试有效');
+        toast(ok + '/' + d.accounts.length + (_lang === 'zh' ? ' 会话测试有效' : ' sessions are valid'));
         loadMimoAccounts();
     } catch (e) { toast(_('reqFail'), true); }
-    btn.disabled = false; btn.textContent = '测试全部有效性';
+    btn.disabled = false; btn.textContent = _lang === 'zh' ? '测试全部有效性' : 'Test All Status';
 }
 
 async function delMimo(i) {
@@ -345,7 +399,7 @@ async function cleanupSessions() {
     try {
         const r = await fetch('/api/cleanup', { method: 'POST' });
         const d = await r.json();
-        if (d.ok) { toast('✨ ' + d.msg); loadMimoAccounts(); }
+        if (d.ok) { toast(d.msg); loadMimoAccounts(); }
         else toast('清理失败: ' + (d.msg || '未知'), true);
     } catch (e) { toast('清理失败: ' + e.message, true); }
     btn.disabled = false; btn.textContent = '清理过期会话';
@@ -636,7 +690,7 @@ async function loadUsage() {
         let entries = Object.entries(models).sort((a, b) => b[1].total_tokens - a[1].total_tokens);
 
         if (!entries.length && !total.requests) {
-            $id('usageContent').innerHTML = '<div class="empty"><div style="font-size:40px;margin-bottom:10px;opacity:0.5">📊</div>暂无用量数据</div>';
+            $id('usageContent').innerHTML = `<div class="empty">${_('usageNoData')}</div>`;
             return;
         }
 
