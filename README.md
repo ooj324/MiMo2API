@@ -50,7 +50,7 @@
 
 - **OpenAI 完全兼容** — 标准 `/v1/chat/completions`（流式/非流式）、`/v1/models`、`/v1/models/{id}` 端点，可直接对接 ChatBox、NextChat、LobeChat 等任何 OpenAI 客户端
 - **Anthropic Messages API 兼容** — 完整支持 `/v1/messages`（流式/非流式）+ count_tokens + batches CRUD + message_get，共 9 个 Anthropic 端点，可对接 RikkaHub 等 Anthropic 客户端
-- **工具调用（Function Calling）** — 7 种提取策略覆盖 MiMoML（`<|MiMoML|tool_calls>`）、MiMo 原生 XML (`<tool_call>`)、TOOL_CALL 标签、JSON、`<function_call>` XML、中文格式、自由文本匹配，自动清洗响应中的工具残留
+- **工具调用（Function Calling）** — 7 种提取策略覆盖 MMML（`<|MMML|tool_calls>`）、MiMo 原生 XML (`<tool_call>`)、TOOL_CALL 标签、JSON、`<function_call>` XML、中文格式、自由文本匹配，自动清洗响应中的工具残留
 - **流式筛分** — 有工具调用时实时分离正文与工具调用内容，客户端无需等待完整响应即可逐步接收，RikkaHub 等不再全文缓冲
 - **多模态支持** — omni 模型支持图片输入（URL、base64），自动完成三步上传流程（genUploadInfo → PUT → resource/parse）；所有模型支持文本文件上传（.md / .txt 等），同样走 MiMo 原生上传流程
 - **深度思考** — 支持 reasoning_effort 参数，自动分离 `<think>` 块输出
@@ -509,25 +509,25 @@ curl -X POST http://localhost:8080/v1/messages \
 
 ## 工具调用详解
 
-MiMo API 本身**不支持** OpenAI function calling 格式。本代理通过**MiMoML 提示词注入 + 5 策略提取**实现：
+MiMo API 本身**不支持** OpenAI function calling 格式。本代理通过**MMML 提示词注入 + 5 策略提取**实现：
 
 ### 提示词注入
 
-将 OpenAI tools 定义转换为 MiMoML（MiMo Markup Language）格式，注入到 system 消息中：
+将 OpenAI tools 定义转换为 MMML（MiMo Markup Language）格式，注入到 system 消息中：
 
 ```xml
-<|MiMoML|tool_calls>
-  <|MiMoML|invoke name="get_weather">
-    <|MiMoML|parameter name="city"><![CDATA[北京]]></|MiMoML|parameter>
-  </|MiMoML|invoke>
-</|MiMoML|tool_calls>
+<|MMML|tool_calls>
+  <|MMML|invoke name="get_weather">
+    <|MMML|parameter name="city"><![CDATA[北京]]></|MMML|parameter>
+  </|MMML|invoke>
+</|MMML|tool_calls>
 ```
 
 ### 5 种提取策略（按优先级）
 
 | 策略 | 格式 | 说明 |
 |------|------|------|
-| MiMoML | `<\|MiMoML\|tool_calls><\|MiMoML\|invoke name="X">...</\|MiMoML\|invoke></\|MiMoML\|tool_calls>` | 主力格式，7 种噪声变体容错 |
+| MMML | `<\|MMML\|tool_calls><\|MMML\|invoke name="X">...</\|MMML\|invoke></\|MMML\|tool_calls>` | 主力格式，7 种噪声变体容错 |
 | TOOL_CALL | `TOOL_CALL: name(key=value)` | 旧格式兜底 |
 | JSON | `{"name":"x","arguments":{...}}` | JSON 块解析 |
 | XML | `<tool_call><function=NAME><parameter=K>V</parameter></function></tool_call>` | MiMo 原生 XML |
@@ -535,8 +535,8 @@ MiMo API 本身**不支持** OpenAI function calling 格式。本代理通过**M
 
 ### 容错能力
 
-- **噪声容错** — 支持缺管道、重复 `<`、全宽 `｜`、连字符 `mimoml-` 等 7 种格式变体
-- **围栏代码块** — 自动跳过 markdown 代码块内的 MiMoML 示例
+- **噪声容错** — 支持缺管道、重复 `<`、全宽 `｜`、连字符 `mmml-` 等 7 种格式变体
+- **围栏代码块** — 自动跳过 markdown 代码块内的 MMML 示例
 - **JSON 修复** — 未加引号 key、缺失数组括号、非法反斜杠自动修复
 - **Schema 归一化** — 根据 tool schema 将非字符串值自动转为字符串
 - **CDATA 保护** — content/command/prompt 等文本参数保留原始字符串
@@ -544,7 +544,7 @@ MiMo API 本身**不支持** OpenAI function calling 格式。本代理通过**M
 
 ### 响应清理
 
-提取成功后，自动清理响应中的工具残留文本（MiMoML 标签、XML 标签、TOOL_CALL 行、JSON 块、CDATA）。
+提取成功后，自动清理响应中的工具残留文本（MMML 标签、XML 标签、TOOL_CALL 行、JSON 块、CDATA）。
 
 ### 流式筛分
 

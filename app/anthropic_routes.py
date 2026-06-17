@@ -540,7 +540,7 @@ async def anthropic_messages(
                 if result[0]:
                     tool_calls = result[0]
                 if result[1] is not None:
-                    content = result[1]  # 使用清理后的文本（含 MiMoML 残留清理）
+                    content = result[1]  # 使用清理后的文本（含 MMML 残留清理）
 
         content = _strip_tool_name_prefix(content, tool_names or [])
         content = _strip_mimo_prefix(content)

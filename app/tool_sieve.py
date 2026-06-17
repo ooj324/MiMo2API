@@ -4,9 +4,8 @@ StreamSieve — 流式筛分引擎
 
 模式：
   - 'tool_call': 检测 TOOL_CALL: name(args) / <tool_call> / <function_call> / [调用工具:]
-  - 'mimoml':   检测 <|MiMoML|tool_calls> / <tool_calls>
+  - 'mmml':   检测 <|MMML|tool_calls> / <tool_calls>
 
-参考: https://github.com/CJackHwang/ds2api (internal/toolstream/)
 """
 
 from dataclasses import dataclass, field
@@ -29,10 +28,10 @@ class StreamSieve:
         "<function_call",
         "<function=",
         "[调用工具:",
-        "<|MiMoML|tool_calls>",
-        "<｜MiMoML｜tool_calls>",
-        "<|MiMoML|function_calls>",
-        "<｜MiMoML｜function_calls>",
+        "<|MMML|tool_calls>",
+        "<｜MMML｜tool_calls>",
+        "<|MMML|function_calls>",
+        "<｜MMML｜function_calls>",
         "<tool_calls>",
         "<function_calls>",
     ]
@@ -240,7 +239,7 @@ class StreamSieve:
                 return True
             if "<tool_calls>" in buf and "</tool_calls>" in buf:
                 return True
-            if "<|MiMoML|tool_calls>" in buf and "</|MiMoML|tool_calls>" in buf:
+            if "<|MMML|tool_calls>" in buf and "</|MMML|tool_calls>" in buf:
                 return True
             return False
 
@@ -288,10 +287,10 @@ class StreamSieve:
             close_pos = rest.find("</tool_calls>")
             if close_pos >= 0:
                 end = start + close_pos + len("</tool_calls>")
-        elif "<|MiMoML|tool_calls>" in rest:
-            close_pos = rest.find("</|MiMoML|tool_calls>")
+        elif "<|MMML|tool_calls>" in rest:
+            close_pos = rest.find("</|MMML|tool_calls>")
             if close_pos >= 0:
-                end = start + close_pos + len("</|MiMoML|tool_calls>")
+                end = start + close_pos + len("</|MMML|tool_calls>")
 
         if end < 0:
             return prefix, ""

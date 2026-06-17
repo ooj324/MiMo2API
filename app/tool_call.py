@@ -1,7 +1,7 @@
 """
 工具调用模块 — MiMo2API
 
-将 OpenAI function calling 格式转译为 MiMo 可理解的 MiMoML 提示词，
+将 OpenAI function calling 格式转译为 MiMo 可理解的 MMML 提示词，
 并从 MiMo 的纯文本响应中解析回结构化 tool_call。
 
 5 重提取策略 + camelCase 全链路匹配 + 防御性编程。
@@ -42,7 +42,7 @@ def _safe_get(d: Any, key: str, default: Any = None) -> Any:
 # ─── 构建工具提示词 ──────────────────────────────────────────
 
 def build_tool_prompt(tools: List[Dict[str, Any]], passthrough: bool = False) -> str:
-    """构建 MiMoML 工具提示词，动态提取客户端 tools 的名称和描述。
+    """构建 MMML 工具提示词，动态提取客户端 tools 的名称和描述。
 
     passthrough=True 时跳过格式说明书，直接嵌入原始工具定义 JSON，
     适合 Roo Code / Cline 等自带工具定义的客户端，减少格式冲突。
@@ -51,7 +51,7 @@ def build_tool_prompt(tools: List[Dict[str, Any]], passthrough: bool = False) ->
         return ""
 
     if passthrough:
-        # 透传模式：跳过冗长的 MiMoML 格式说明书，直接嵌入原始工具定义
+        # 透传模式：跳过冗长的 MMML 格式说明书，直接嵌入原始工具定义
         # 用更简洁的指令让模型自己决定用什么格式输出工具调用
         import json
         tools_json = json.dumps(tools, indent=2, ensure_ascii=False)
@@ -60,46 +60,46 @@ def build_tool_prompt(tools: List[Dict[str, Any]], passthrough: bool = False) ->
             "Use your native tool-calling format when you need to invoke one.\n\n"
             f"<tools>\n{tools_json}\n</tools>\n\n"
             "When you use a tool, use whatever tool call format you normally use "
-            "(TOOL_CALL:, <|MiMoML|tool_calls>, or the standard format you prefer)."
+            "(TOOL_CALL:, <|MMML|tool_calls>, or the standard format you prefer)."
         )
 
 
     prompt = """TOOL CALL FORMAT — FOLLOW EXACTLY:
 
-<|MiMoML|tool_calls>
-  <|MiMoML|invoke name="TOOL_NAME_HERE">
-    <|MiMoML|parameter name="PARAMETER_NAME"><![CDATA[PARAMETER_VALUE]]></|MiMoML|parameter>
-  </|MiMoML|invoke>
-</|MiMoML|tool_calls>
+<|MMML|tool_calls>
+  <|MMML|invoke name="TOOL_NAME_HERE">
+    <|MMML|parameter name="PARAMETER_NAME"><![CDATA[PARAMETER_VALUE]]></|MMML|parameter>
+  </|MMML|invoke>
+</|MMML|tool_calls>
 
 RULES:
-1) Use the <|MiMoML|tool_calls> wrapper format.
-2) Put one or more <|MiMoML|invoke> entries under a single <|MiMoML|tool_calls> root.
-3) Put the tool name in the invoke name attribute: <|MiMoML|invoke name="TOOL_NAME">.
+1) Use the <|MMML|tool_calls> wrapper format.
+2) Put one or more <|MMML|invoke> entries under a single <|MMML|tool_calls> root.
+3) Put the tool name in the invoke name attribute: <|MMML|invoke name="TOOL_NAME">.
 4) All string values must use <![CDATA[...]]>, even short ones.
-5) Every top-level argument must be a <|MiMoML|parameter name="ARG_NAME">...</|MiMoML|parameter> node.
+5) Every top-level argument must be a <|MMML|parameter name="ARG_NAME">...</|MMML|parameter> node.
 6) Objects use nested XML elements. Arrays may repeat <item> children.
 7) Numbers, booleans, and null stay plain text.
 8) Use only the parameter names in the tool schema. Do not invent fields.
 9) Do NOT wrap XML in markdown fences. Do NOT output explanations or role markers.
-10) If you call a tool, the first non-whitespace characters must be exactly <|MiMoML|tool_calls>.
-11) Never omit the opening <|MiMoML|tool_calls> tag.
+10) If you call a tool, the first non-whitespace characters must be exactly <|MMML|tool_calls>.
+11) Never omit the opening <|MMML|tool_calls> tag.
 
 【WRONG — Do NOT do these】:
 
 Wrong 1 — mixed text after XML:
-  <|MiMoML|tool_calls>...</|MiMoML|tool_calls> I hope this helps.
+  <|MMML|tool_calls>...</|MMML|tool_calls> I hope this helps.
 
 Wrong 2 — Markdown code fences:
   ```xml
-  <|MiMoML|tool_calls>...</|MiMoML|tool_calls>
+  <|MMML|tool_calls>...</|MMML|tool_calls>
   ```
 
 Wrong 3 — missing opening wrapper:
-  <|MiMoML|invoke name="TOOL_NAME">...</|MiMoML|invoke>
-  </|MiMoML|tool_calls>
+  <|MMML|invoke name="TOOL_NAME">...</|MMML|invoke>
+  </|MMML|tool_calls>
 
-Remember: The ONLY valid way to use tools is the <|MiMoML|tool_calls>...</|MiMoML|tool_calls> block.
+Remember: The ONLY valid way to use tools is the <|MMML|tool_calls>...</|MMML|tool_calls> block.
 
 """
 
@@ -175,7 +175,7 @@ def extract_tool_call(
     """从 MiMo 输出文本中提取工具调用。
 
     5 重策略（按优先级）：
-      0. <|MiMoML|tool_calls> XML — MiMoML 格式（最高优先级）
+      0. <|MMML|tool_calls> XML — MMML 格式（最高优先级）
       1. TOOL_CALL: name(args)  — 旧格式兜底
       2. JSON {"name":"x","arguments":{...}} — 内嵌 JSON
       3. <tool_call> XML — MiMo 原生格式
@@ -189,8 +189,8 @@ def extract_tool_call(
 
     text = text.replace("\x00", "")
 
-    # 策略0: MiMoML 格式（最高优先级）
-    tc = _extract_mimoml_tool_call(text, tool_names)
+    # 策略0: MMML 格式（最高优先级）
+    tc = _extract_mmml_tool_call(text, tool_names)
     if tc:
         return tc, clean_tool_text(text)
 
@@ -214,35 +214,35 @@ def extract_tool_call(
     if tc:
         return tc, clean_tool_text(text)
 
-    # 无工具调用：若含 MiMoML / 工具标记残留，仍清理再返回
+    # 无工具调用：若含 MMML / 工具标记残留，仍清理再返回
     if _has_ml_keyword(text.lower()) or _has_tool_markers(text):
         return None, clean_tool_text(text)
     return None, text
 
 
 def _has_tool_markers(text: str) -> bool:
-    """检测文本是否包含工具调用标记（MiMoML、XML 等）。"""
+    """检测文本是否包含工具调用标记（MMML、XML 等）。"""
     markers = [
         "TOOL_CALL:", "<tool_call", "<function_call", "<function=",
-        "<|MiMoML|", "<tool_calls>", "<invoke",
+        "<|MMML|", "<tool_calls>", "<invoke",
     ]
     text_lower = text.lower()
     return any(m.lower() in text_lower for m in markers)
 
 
-# ─── 策略0: MiMoML 格式（最高优先级）─────────────────────
+# ─── 策略0: MMML 格式（最高优先级）─────────────────────
 
-def _extract_mimoml_tool_call(
+def _extract_mmml_tool_call(
     text: str, tool_names: List[str]
 ) -> Optional[List[Dict[str, Any]]]:
-    """匹配 MiMoML 格式:
-    <|MiMoML|tool_calls>
-      <|MiMoML|invoke name="TOOL">
-        <|MiMoML|parameter name="X"><![CDATA[V]]></|MiMoML|parameter>
-      </|MiMoML|invoke>
-    </|MiMoML|tool_calls>
+    """匹配 MMML 格式:
+    <|MMML|tool_calls>
+      <|MMML|invoke name="TOOL">
+        <|MMML|parameter name="X"><![CDATA[V]]></|MMML|parameter>
+      </|MMML|invoke>
+    </|MMML|tool_calls>
     """
-    if not (_MIMOML_KEYWORD in text.lower() or
+    if not (_MMML_KEYWORD in text.lower() or
             _DSML_KEYWORD in text.lower() or
             "function_calls" in text.lower() or
             "tool_calls" in text.lower() or
@@ -252,20 +252,22 @@ def _extract_mimoml_tool_call(
     # 松散 CDATA 修复：处理未闭合的 CDATA
     text = _sanitize_loose_cdata(text)
 
-    # 缺失开标签修复：有关闭标签但缺开头 → 补回 <|MiMoML|tool_calls>
-    has_closing = ("</|MiMoML|tool_calls>" in text or
-                   "</mimoml-tool_calls>" in text.lower() or
-                   "</tool_calls>" in text.lower())
-    has_opening = ("<|MiMoML|tool_calls" in text.replace(' ', '').replace('｜','|').replace('||','|') or
-                   "<|MiMoML|function_calls" in text.replace(' ', '').replace('｜','|').replace('||','|') or
-                   "<mimoml-tool_calls" in text.lower() or
-                   "<mimoml-function_calls" in text.lower() or
+    # 缺失开标签修复：有关闭标签但缺开头 → 补回 <|MMML|tool_calls>
+    has_closing = ("</|MMML|tool_calls>" in text or
+                   "</mmml-tool_calls>" in text.lower() or
+                   "</tool_calls>" in text.lower() or
+                   "</function_calls>" in text.lower() or
+                   "</invoke>" in text.lower())
+    has_opening = ("<|MMML|tool_calls" in text.replace(' ', '').replace('｜','|').replace('||','|') or
+                   "<|MMML|function_calls" in text.replace(' ', '').replace('｜','|').replace('||','|') or
+                   "<mmml-tool_calls" in text.lower() or
+                   "<mmml-function_calls" in text.lower() or
                    "<tool_calls>" in text.lower() or
                    "<function_calls>" in text.lower())
     if has_closing and not has_opening:
-        text = "<|MiMoML|tool_calls>\n" + text
+        text = "<|MMML|tool_calls>\n" + text
 
-    normalized = strip_mimoml(text)
+    normalized = strip_mmml(text)
     tool_calls = []
 
     tc_pattern = re.compile(r"<(?:tool_calls|function_calls)>(.*?)</(?:tool_calls|function_calls)>", re.DOTALL | re.IGNORECASE)
@@ -291,7 +293,7 @@ def _extract_mimoml_tool_call(
             if _is_inside_think(normalized, m.start()):
                 continue
             inner = m.group(2)
-            args = _parse_mimoml_parameters(inner)
+            args = _parse_mmml_parameters(inner)
             resolved = _resolve_tool_name(name, tool_names)
             tc = normalize_tool_call({"name": resolved, "arguments": args}) if resolved else None
             if tc:
@@ -310,7 +312,7 @@ def _extract_mimoml_tool_call(
         for m in list(invoke_pattern.finditer(block_text)) + list(invoke_nospace.finditer(block_text)):
             name = m.group(1).strip()
             inner = m.group(2)
-            args = _parse_mimoml_parameters(inner)
+            args = _parse_mmml_parameters(inner)
             resolved = _resolve_tool_name(name, tool_names)
             tc = normalize_tool_call({"name": resolved, "arguments": args}) if resolved else None
             if tc:
@@ -338,7 +340,7 @@ def _extract_mimoml_tool_call(
                 if close_tc != -1 and close_tc < end:
                     end = close_tc
                 inner = block_text[start:end]
-                args = _parse_mimoml_parameters(inner)
+                args = _parse_mmml_parameters(inner)
                 resolved = _resolve_tool_name(name, tool_names)
                 if resolved:
                     tc = normalize_tool_call({"name": resolved, "arguments": args})
@@ -681,14 +683,13 @@ def clean_tool_text(text: str) -> str:
     )
     # <function_call> / <function_calls> 标签
     text = re.sub(r"</?function_calls?>", "", text)
-    # MiMoML 标签残留（修复 \\| → \| 使正则正确匹配 MiMoML 标签）
-    text = re.sub(r"</?\|MiMoML\|[^>]*>", "", text)
-    text = re.sub(r"<tool_calls?>.*?</tool_calls?>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    # 同时匹配 <invoke> 和 <|MiMoML|invoke> 两种形式
-    text = re.sub(r"<(?:[|]MiMoML[|])?invoke[^>]*>.*?</(?:[|]MiMoML[|])?invoke>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    # 同时匹配 <parameter> 和 <|MiMoML|parameter> 两种形式
-    text = re.sub(r"<(?:[|]MiMoML[|])?parameter[^>]*>.*?</(?:[|]MiMoML[|])?parameter>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    # 优先清理完整的块内容（包括内部的 CDATA 和参数）
+    text = re.sub(r"<(?:[|]MMML[|])?tool_calls?>.*?</(?:[|]MMML[|])?tool_calls?>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<(?:[|]MMML[|])?invoke[^>]*>.*?</(?:[|]MMML[|])?invoke>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<(?:[|]MMML[|])?parameter[^>]*>.*?</(?:[|]MMML[|])?parameter>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<!\[CDATA\[.*?\]\]>", "", text, flags=re.DOTALL)
+    # 最后清理可能残留的零散 MMML 标签
+    text = re.sub(r"</?\|MMML\|[^>]*>", "", text, flags=re.IGNORECASE)
     # <tool_call>...</tool_call>
     text = re.sub(
         r"<tool_call>.*?</tool_call>", "",
@@ -879,46 +880,46 @@ def _is_inside_think(text: str, pos: int) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════
-# MiMoML 噪声容错前缀：重复 <、|、｜、空格、mimoml 关键字
-_MIMOML_NOISE_CHARS = set("|｜ \t\r\n")
-_MIMOML_KEYWORD = "mimoml"
-_MIMOML_KEYWORD_LEN = len(_MIMOML_KEYWORD)
-# DSML 变体（模型有时用 DSML 替代 MiMoML）
+# MMML 噪声容错前缀：重复 <、|、｜、空格、mmml 关键字
+_MMML_NOISE_CHARS = set("|｜ \t\r\n")
+_MMML_KEYWORD = "mmml"
+_MMML_KEYWORD_LEN = len(_MMML_KEYWORD)
+# DSML 变体（模型有时用 DSML 替代 MMML）
 _DSML_KEYWORD = "dsml"
 _DSML_KEYWORD_LEN = len(_DSML_KEYWORD)
 
 # 检测文本是否含任一 ML 关键字
 def _has_ml_keyword(text: str) -> bool:
     t = text.lower()
-    return _MIMOML_KEYWORD in t or _DSML_KEYWORD in t or "function_calls" in t
+    return _MMML_KEYWORD in t or _DSML_KEYWORD in t or "function_calls" in t
 
-# 连字符变体：mimoml-tool_calls → tool_calls
-_MIMOML_HYPHENATED = {
-    "mimoml-tool_calls": "tool_calls",
-    "mimoml-tool-calls": "tool_calls",
-    "mimoml-invoke": "invoke",
-    "mimoml-parameter": "parameter",
+# 连字符变体：mmml-tool_calls → tool_calls
+_MMML_HYPHENATED = {
+    "mmml-tool_calls": "tool_calls",
+    "mmml-tool-calls": "tool_calls",
+    "mmml-invoke": "invoke",
+    "mmml-parameter": "parameter",
 }
 
-_MIMOML_TAG_NAMES = {"tool_calls", "function_calls", "invoke", "parameter", "invokename"}
+_MMML_TAG_NAMES = {"tool_calls", "function_calls", "invoke", "parameter", "invokename"}
 _CDATA_OPEN = "<![CDATA["
 _CDATA_CLOSE = "]]>"
 
 
-def strip_mimoml(text: str) -> str:
-    """去除 MiMoML 前缀标记，转换为标准 XML，支持噪声容错。
+def strip_mmml(text: str) -> str:
+    """去除 MMML 前缀标记，转换为标准 XML，支持噪声容错。
 
     处理的变体：
-      <|MiMoML|tool_calls>      →  <tool_calls>
-      <MiMoML|tool_calls>       →  <tool_calls>     (缺开头 |)
-      <<|MiMoML|tool_calls>     →  <tool_calls>     (重复 <)
-      <|MiMoML tool_calls>      →  <tool_calls>     (空格)
-      <｜MiMoML｜tool_calls>     →  <tool_calls>     (全宽管道)
-      <MiMoMLtool_calls>        →  <tool_calls>     (无分隔符)
-      <|MiMoML|tool_calls|>     →  <tool_calls>     (尾部 |)
-      <mimoml-tool_calls>       →  <tool_calls>     (连字符)
+      <|MMML|tool_calls>      →  <tool_calls>
+      <MMML|tool_calls>       →  <tool_calls>     (缺开头 |)
+      <<|MMML|tool_calls>     →  <tool_calls>     (重复 <)
+      <|MMML tool_calls>      →  <tool_calls>     (空格)
+      <｜MMML｜tool_calls>     →  <tool_calls>     (全宽管道)
+      <MMMLtool_calls>        →  <tool_calls>     (无分隔符)
+      <|MMML|tool_calls|>     →  <tool_calls>     (尾部 |)
+      <mmml-tool_calls>       →  <tool_calls>     (连字符)
 
-    自动跳过 markdown 围栏代码块内的 MiMoML 示例。
+    自动跳过 markdown 围栏代码块内的 MMML 示例。
     """
     if not text:
         return text
@@ -961,10 +962,10 @@ def strip_mimoml(text: str) -> str:
         closing = inner.startswith('/')
         rest = inner[1:] if closing else inner
 
-        j, is_mimoml = _consume_mimoml_noise(rest, text_lower, i + 1 + (1 if closing else 0))
+        j, is_mmml = _consume_mmml_noise(rest, text_lower, i + 1 + (1 if closing else 0))
 
-        if is_mimoml:
-            tag_name = _match_mimoml_tag(rest, j)
+        if is_mmml:
+            tag_name = _match_mmml_tag(rest, j)
             if tag_name:
                 rest_after = rest[tag_name[1]:]
                 actual_end = end
@@ -1046,10 +1047,10 @@ def _find_fence_close(text: str, start: int, char: str, min_len: int) -> int:
     return -1
 
 
-def _consume_mimoml_noise(rest: str, text_lower: str, abs_pos: int) -> tuple:
-    """消费 MiMoML 噪声前缀，返回 (j, is_mimoml)。"""
+def _consume_mmml_noise(rest: str, text_lower: str, abs_pos: int) -> tuple:
+    """消费 MMML 噪声前缀，返回 (j, is_mmml)。"""
     j = 0
-    is_mimoml = False
+    is_mmml = False
     rest_len = len(rest)
 
     while j < rest_len:
@@ -1057,38 +1058,38 @@ def _consume_mimoml_noise(rest: str, text_lower: str, abs_pos: int) -> tuple:
         # 重复 < → 噪声
         if ch == '<':
             j += 1
-            is_mimoml = True
+            is_mmml = True
             continue
         # 单字符噪声（|、空格等）
-        if ch in _MIMOML_NOISE_CHARS:
+        if ch in _MMML_NOISE_CHARS:
             j += 1
-            is_mimoml = True
+            is_mmml = True
             continue
         # 全宽管道 ｜(U+FF5C)
         if rest[j:].startswith('｜'):
             j += 1
-            is_mimoml = True
+            is_mmml = True
             continue
-        # mimoml / dsml 关键字
-        if (rest[j:j+_MIMOML_KEYWORD_LEN].lower() == _MIMOML_KEYWORD or
+        # mmml / dsml 关键字
+        if (rest[j:j+_MMML_KEYWORD_LEN].lower() == _MMML_KEYWORD or
                 rest[j:j+_DSML_KEYWORD_LEN].lower() == _DSML_KEYWORD):
-            kw_len = _DSML_KEYWORD_LEN if rest[j:j+_DSML_KEYWORD_LEN].lower() == _DSML_KEYWORD else _MIMOML_KEYWORD_LEN
+            kw_len = _DSML_KEYWORD_LEN if rest[j:j+_DSML_KEYWORD_LEN].lower() == _DSML_KEYWORD else _MMML_KEYWORD_LEN
             j += kw_len
-            is_mimoml = True
+            is_mmml = True
             # 如果后面紧跟 - 或 _（连字符变体），也吞掉
             if j < rest_len and rest[j] in ('-', '_'):
                 j += 1
             continue
         break
 
-    return j, is_mimoml
+    return j, is_mmml
 
 
-def _match_mimoml_tag(rest: str, j: int) -> Optional[tuple]:
-    """匹配 MiMoML 标签名，返回 (canonical_name, end_pos) 或 None。"""
+def _match_mmml_tag(rest: str, j: int) -> Optional[tuple]:
+    """匹配 MMML 标签名，返回 (canonical_name, end_pos) 或 None。"""
     rest_len = len(rest)
     # 先检查连字符变体
-    for hyphenated, canonical in _MIMOML_HYPHENATED.items():
+    for hyphenated, canonical in _MMML_HYPHENATED.items():
         if rest[j:j+len(hyphenated)].lower() == hyphenated:
             return (canonical, j + len(hyphenated))
 
@@ -1101,13 +1102,13 @@ def _match_mimoml_tag(rest: str, j: int) -> Optional[tuple]:
         return None
 
     tag_name = rest[j:name_end].lower()
-    if tag_name in _MIMOML_TAG_NAMES:
+    if tag_name in _MMML_TAG_NAMES:
         return (tag_name, name_end)
 
     return None
 
 
-def _parse_mimoml_parameters(inner_text: str) -> Dict[str, Any]:
+def _parse_mmml_parameters(inner_text: str) -> Dict[str, Any]:
     """解析 <parameter name="x">...</parameter> 为参数 dict。
 
     支持：

@@ -346,7 +346,7 @@ async def chat_completions(
                 if result[0]:
                     tool_calls = result[0]  # List[Dict]
                 if result[1] is not None:
-                    content = result[1]  # 使用清理后的文本（含 MiMoML 残留清理）
+                    content = result[1]  # 使用清理后的文本（含 MMML 残留清理）
 
         # 清洗工具名前缀
         content = _strip_tool_name_prefix(content, tool_names)

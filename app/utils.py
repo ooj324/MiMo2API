@@ -119,22 +119,26 @@ def _serialize_tool_calls(tool_calls: list) -> str:
     """统一定义工具调用序列化 — 兼容 dict 和 pydantic model。"""
     tc_lines = []
     for tc in tool_calls:
+        tc_id = _safe_nested_get(tc, "id", "")
         fn = _safe_nested_get(tc, "function")
         if not fn:
             continue
         fname = _safe_nested_get(fn, "name", "")
         args_str = _safe_nested_get(fn, "arguments", "{}")
 
-        try:
-            args = _json.loads(args_str) if isinstance(args_str, str) else args_str
-            if isinstance(args, dict):
-                kv = ", ".join(f"{k}={v!r}" for k, v in args.items())
-            else:
-                kv = str(args)
-        except Exception:
-            kv = str(args_str)
+        if not isinstance(args_str, str):
+            try:
+                args_str = _json.dumps(args_str, ensure_ascii=False)
+            except Exception:
+                args_str = str(args_str)
 
-        tc_lines.append(f"TOOL_CALL: {fname}({kv})")
+        clean_args = args_str.replace(']]>', ']]]]><![CDATA[>')
+
+        tc_lines.append(
+            f'<|MMML|tool_call id="{tc_id}" name="{fname}">\n'
+            f'<![CDATA[\n{clean_args}\n]]>\n'
+            f'</|MMML|tool_call>'
+        )
 
     return "\n".join(tc_lines)
 
@@ -375,7 +379,7 @@ def build_query_from_messages(
 ) -> str:
     """从消息列表构建查询字符串。
 
-    采用强隔离的 MiMoML XML 标签结构防止 Prompt Injection。
+    采用强隔离的 MMML XML 标签结构防止 Prompt Injection。
     """
     from .tool_call import build_tool_prompt
 
@@ -403,7 +407,7 @@ def build_query_from_messages(
                     text_parts.append(item.get("text", ""))
             content = " ".join(text_parts)
 
-        # 把 assistant 工具调用对象转换为文本（MiMoML 标签形式）
+        # 把 assistant 工具调用对象转换为文本（MMML 标签形式）
         if hasattr(msg, 'tool_calls') and msg.tool_calls:
             tool_str = _serialize_tool_calls(msg.tool_calls)
             # 兼容：如果 assistant 已有文本内容，则拼接，否则直接使用工具调用字符串
@@ -416,14 +420,14 @@ def build_query_from_messages(
             clean = clean.strip()
             # 转义 CDATA 避免嵌套导致 XML 解析破坏
             clean_cdata = clean.replace(']]>', ']]]]><![CDATA[>')
-            content = f'<|MiMoML|tool_response id="{tool_call_id}">\n<![CDATA[\n{clean_cdata}\n]]>\n</|MiMoML|tool_response>'
+            content = f'<|MMML|tool_response id="{tool_call_id}">\n<![CDATA[\n{clean_cdata}\n]]>\n</|MMML|tool_response>'
             query_parts.append(content)
         elif role == "user":
-            query_parts.append(f"<|MiMoML|user>\n{content}\n</|MiMoML|user>")
+            query_parts.append(f"<|MMML|user>\n{content}\n</|MMML|user>")
         elif role == "assistant":
-            query_parts.append(f"<|MiMoML|assistant>\n{content}\n</|MiMoML|assistant>")
+            query_parts.append(f"<|MMML|assistant>\n{content}\n</|MMML|assistant>")
         else:
-            query_parts.append(f"<|MiMoML|{role}>\n{content}\n</|MiMoML|{role}>")
+            query_parts.append(f"<|MMML|{role}>\n{content}\n</|MMML|{role}>")
 
     system_text = system_text.strip()
 
@@ -431,7 +435,7 @@ def build_query_from_messages(
     if tools:
         tool_prompt = build_tool_prompt(tools, passthrough=passthrough)
         if tool_prompt:
-            tool_block = f"<|MiMoML|tools_definition>\n{tool_prompt}\n</|MiMoML|tools_definition>"
+            tool_block = f"<|MMML|tools_definition>\n{tool_prompt}\n</|MMML|tools_definition>"
             if system_text:
                 system_text = system_text + "\n\n" + tool_block
             else:
@@ -439,6 +443,6 @@ def build_query_from_messages(
 
     # system 消息插入最前面
     if system_text:
-        query_parts.insert(0, f"<|MiMoML|system_instructions>\n{system_text}\n</|MiMoML|system_instructions>")
+        query_parts.insert(0, f"<|MMML|system_instructions>\n{system_text}\n</|MMML|system_instructions>")
 
     return "\n\n".join(query_parts)
