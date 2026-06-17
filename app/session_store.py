@@ -57,19 +57,18 @@ def _fingerprint(messages: list) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def _is_continuation(messages: list, stored_fingerprint: str) -> bool:
+def _is_continuation(messages: list, stored_fingerprint: str) -> int:
     """检查当前消息列表是否是存储在 fingerprint 中的会话的延续。
 
-    策略（与 GoblinHonest 的 isMessageContinuation 一致）：
-    从最长 slice 开始往前查找，看是否有一段消息的指纹匹配存储的指纹。
+    返回匹配到的非系统消息数量，若未匹配则返回 0。
     """
     if not stored_fingerprint:
-        return False
+        return 0
 
     non_sys = [m for m in messages if getattr(m, 'role', '') != 'system']
     # 只有 1 条非 system 消息 → 新对话
     if len(non_sys) < 2:
-        return False
+        return 0
 
     for i in range(len(non_sys), 0, -1):
         slice_msgs = (
@@ -78,9 +77,9 @@ def _is_continuation(messages: list, stored_fingerprint: str) -> bool:
         )
         slice_fp = _fingerprint(slice_msgs)
         if slice_fp == stored_fingerprint:
-            return True
+            return i
 
-    return False
+    return 0
 
 
 def get_or_create_session(
@@ -96,9 +95,10 @@ def get_or_create_session(
         model: 模型名
 
     Returns:
-        (conversation_id: str, is_new: bool)
+        (conversation_id: str, is_new: bool, matched_count: int)
         - conversation_id: MiMo 会话 ID（复用或新建）
         - is_new: True=新建会话, False=复用了现有会话
+        - matched_count: 复用时匹配到的历史非系统消息数量，用于截取增量消息。新建时为0。
     """
     db = _load()
     key = f"account_{account_id}"
@@ -107,7 +107,8 @@ def get_or_create_session(
 
     if not current_fp:
         # 空消息 → 全新的会话
-        return _create_new(key, model, sessions, db)
+        conv_id, is_new = _create_new(key, model, sessions, db)
+        return conv_id, is_new, 0
 
     now = time.time()
 
@@ -121,7 +122,8 @@ def get_or_create_session(
         if not s.get('fingerprint'):
             continue
 
-        if _is_continuation(messages, s['fingerprint']):
+        match_idx = _is_continuation(messages, s['fingerprint'])
+        if match_idx > 0:
             # token 超限检查
             if s.get('prompt_tokens', 0) > TOKEN_THRESHOLD:
                 # 超限 → 清屏，跳出匹配创建新会话
@@ -131,10 +133,11 @@ def get_or_create_session(
             s['fingerprint'] = current_fp
             s['last_used'] = now
             _save({**db, key: sessions})
-            return s['conversation_id'], False
+            return s['conversation_id'], False, match_idx
 
     # 没有匹配的会话 → 创建新会话
-    return _create_new(key, model, sessions, db)
+    conv_id, is_new = _create_new(key, model, sessions, db)
+    return conv_id, is_new, 0
 
 
 def _create_new(key: str, model: str, sessions: list, db: dict) -> tuple:
@@ -185,7 +188,7 @@ def update_tokens(account_id: str, conversation_id: str, prompt_tokens: int) -> 
     sessions = db.get(key, [])
     for s in sessions:
         if s['conversation_id'] == conversation_id:
-            s['prompt_tokens'] = s.get('prompt_tokens', 0) + prompt_tokens
+            s['prompt_tokens'] = max(s.get('prompt_tokens', 0), prompt_tokens)
             s['last_used'] = time.time()
             break
     _save({**db, key: sessions})
@@ -258,7 +261,7 @@ def find_existing_session_account(messages: list, model: str) -> str | None:
             if s.get('prompt_tokens', 0) > TOKEN_THRESHOLD:
                 continue
 
-            if _is_continuation(messages, s['fingerprint']):
+            if _is_continuation(messages, s['fingerprint']) > 0:
                 return account_id
     return None
 

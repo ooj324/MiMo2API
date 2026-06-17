@@ -5,3 +5,5 @@ sessions.json
 usage.json
 app/responses.json
 accounts.json
+mimo_sessions.json
+*.bak

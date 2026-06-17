@@ -5,12 +5,34 @@ import threading
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import List, Optional
-from dataclasses import dataclass, asdict
+
+
+@dataclass
+class XiaomiAccount:
+    """小米 Passport 原始账号"""
+    user_id: str
+    pass_token: str
+    email: str = ""
+    device_id: str = ""
+    password: str = ""
+    created_at: str = ""
+    cookies: List[dict] = field(default_factory=list)
+    raw_data: dict = field(default_factory=dict)
+
+    def to_dict(self):
+        return {
+            "user_id": self.user_id,
+            "email": self.email,
+            "pass_token_masked": self.pass_token[:16] + "..." + self.pass_token[-6:] if len(self.pass_token) > 22 else "***",
+            "device_id": self.device_id,
+            "created_at": self.created_at,
+            "has_password": bool(self.password),
+        }
 
 
 @dataclass
 class MimoAccount:
-    """Mimo账号配置"""
+    """MiMo 会话（实际用于 API 调用）"""
     service_token: str
     user_id: str
     email: str = ""
@@ -18,13 +40,19 @@ class MimoAccount:
     login_time: str = ""
     last_test: str = ""
     is_valid: bool = False
-    raw_data: dict = field(default_factory=dict)
+    source_account: str = ""
 
     def to_dict(self):
-        d = asdict(self)
-        d.pop("raw_data", None)
-        d["token_masked"] = self.service_token[:16] + "..." + self.service_token[-6:] if len(self.service_token) > 22 else "***"
-        return d
+        return {
+            "user_id": self.user_id,
+            "email": self.email,
+            "token_masked": self.service_token[:16] + "..." + self.service_token[-6:] if len(self.service_token) > 22 else "***",
+            "xiaomichatbot_ph": "***" if self.xiaomichatbot_ph else "",
+            "login_time": self.login_time,
+            "last_test": self.last_test,
+            "is_valid": self.is_valid,
+            "source_account": self.source_account,
+        }
 
 
 @dataclass
@@ -33,13 +61,17 @@ class Config:
     api_keys: str = "sk-default"
     admin_password: str = "admin"
     mimo_accounts: List[MimoAccount] = None
-    models: List[str] = None  # 自定义模型列表，None 表示自动探测
-    tools_passthrough: bool = False  # 全局工具透传模式
-    session_limit_per_account: int = 10  # 单个账号最大并发会话数
+    xiaomi_accounts: List[XiaomiAccount] = None
+    models: List[str] = None
+    tools_passthrough: bool = False
+    session_limit_per_account: int = 10
+    session_reuse: bool = True
 
     def __post_init__(self):
         if self.mimo_accounts is None:
             self.mimo_accounts = []
+        if self.xiaomi_accounts is None:
+            self.xiaomi_accounts = []
         if self.models is None:
             self.models = []
 
@@ -50,18 +82,19 @@ class Config:
             "mimo_accounts": [acc.to_dict() for acc in self.mimo_accounts],
             "tools_passthrough": self.tools_passthrough,
             "session_limit_per_account": self.session_limit_per_account,
+            "session_reuse": self.session_reuse,
         }
         if self.models:
             d["models"] = self.models
         return d
 
     def to_save_dict(self):
-        """用于保存到 config.json 的格式（不含账号信息）"""
         d = {
             "api_keys": self.api_keys,
             "admin_password": self.admin_password,
             "tools_passthrough": self.tools_passthrough,
             "session_limit_per_account": self.session_limit_per_account,
+            "session_reuse": self.session_reuse,
         }
         if self.models:
             d["models"] = self.models
@@ -69,8 +102,6 @@ class Config:
 
 
 class ConfigManager:
-    """配置管理器 - 线程安全"""
-
     def __init__(self, config_file: str = "config.json"):
         self.config_file = Path(config_file)
         self.config = Config()
@@ -79,7 +110,6 @@ class ConfigManager:
         self.load()
 
     def load(self):
-        """加载配置和账号"""
         try:
             if self.config_file.exists():
                 with open(self.config_file, 'r', encoding='utf-8') as f:
@@ -87,10 +117,10 @@ class ConfigManager:
                     self.config = Config(
                         api_keys=data.get('api_keys', 'sk-default'),
                         admin_password=data.get('admin_password', 'admin'),
-                        mimo_accounts=[],  # 由 load_accounts_from_json 填充
                         models=data.get('models', []),
                         tools_passthrough=data.get('tools_passthrough', False),
-                        session_limit_per_account=data.get('session_limit_per_account', 10)
+                        session_limit_per_account=data.get('session_limit_per_account', 10),
+                        session_reuse=data.get('session_reuse', True)
                     )
             else:
                 self.config = Config()
@@ -99,11 +129,11 @@ class ConfigManager:
             print(f"加载配置失败: {e}")
             self.config = Config()
             self.save_config_only()
-            
-        self.load_accounts_from_json()
+
+        self.load_xiaomi_accounts()
+        self.load_mimo_sessions()
 
     def save_config_only(self):
-        """仅保存 config.json"""
         with self.lock:
             try:
                 with open(self.config_file, 'w', encoding='utf-8') as f:
@@ -112,160 +142,230 @@ class ConfigManager:
                 print(f"保存配置失败: {e}")
 
     def save(self):
-        """保存配置和账号"""
         self.save_config_only()
-        self.save_accounts_to_json()
+        self.save_xiaomi_accounts()
+        self.save_mimo_sessions()
 
     def validate_api_key(self, key: str) -> bool:
-        """验证API Key"""
         with self.lock:
             keys = [k.strip() for k in self.config.api_keys.split(',')]
             return key in keys
 
-    def load_accounts_from_json(self) -> int:
-        """从 accounts.json 读取账号数据"""
-        accounts_file = Path("accounts.json")
-        if not accounts_file.exists():
-            self.config.mimo_accounts = []
+    # ─── 小米账号 (accounts.json) ────────────────────────────
+
+    def load_xiaomi_accounts(self) -> int:
+        f = Path("accounts.json")
+        if not f.exists():
+            self.config.xiaomi_accounts = []
             return 0
-            
         try:
-            with open(accounts_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            with open(f, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
         except Exception as e:
             print(f"读取 accounts.json 失败: {e}")
-            self.config.mimo_accounts = []
+            self.config.xiaomi_accounts = []
             return 0
-            
+
         accounts = []
         for item in data:
-            if not isinstance(item, dict): continue
+            if not isinstance(item, dict):
+                continue
             email = item.get("email", "")
+            password = item.get("password", "")
+            token = item.get("token", "")
             cookies = item.get("cookies", [])
-            st = uid = ph = ""
+            created_at = item.get("created_at", "")
+
+            # Extract user_id, pass_token, device_id from cookies if not top-level
+            uid = item.get("user_id", "")
+            pt = token or item.get("pass_token", "")
+            did = item.get("device_id", "")
+
             for c in cookies:
-                if not isinstance(c, dict): continue
-                cname = c.get("name", "")
-                cval = c.get("value", "")
-                if cname == "serviceToken": st = cval
-                elif cname == "userId": uid = cval
-                elif cname == "xiaomichatbot_ph": ph = cval
-            
-            if st and uid:
-                new_acc = MimoAccount(
-                    service_token=st,
-                    user_id=uid,
+                if not isinstance(c, dict):
+                    continue
+                name = c.get("name")
+                val = c.get("value")
+                if name == "userId" and not uid:
+                    uid = val
+                elif name == "passToken" and not pt:
+                    pt = val
+                elif name == "deviceId" and not did:
+                    did = val
+
+            if uid and pt:
+                accounts.append(XiaomiAccount(
+                    user_id=str(uid),
+                    pass_token=pt,
                     email=email,
-                    xiaomichatbot_ph=ph,
-                    login_time=item.get("created_at", ""),
-                    is_valid=True,
+                    device_id=did,
+                    password=password,
+                    created_at=created_at,
+                    cookies=cookies,
                     raw_data=item
-                )
-                accounts.append(new_acc)
-                
-        self.config.mimo_accounts = accounts
+                ))
+        self.config.xiaomi_accounts = accounts
         return len(accounts)
 
-    def sync_accounts_json(self, auto_save: bool = True) -> int:
-        """保持向后兼容：同步 accounts.json"""
-        return self.load_accounts_from_json()
-
-    def save_accounts_to_json(self):
-        """将内存中的账号列表写入 accounts.json"""
-        accounts_file = Path("accounts.json")
-        output_data = []
+    def save_xiaomi_accounts(self):
         with self.lock:
-            for acc in self.config.mimo_accounts:
+            out = []
+            for acc in self.config.xiaomi_accounts:
                 item = dict(acc.raw_data) if getattr(acc, "raw_data", None) else {}
-                if acc.email:
-                    item["email"] = acc.email
-                if acc.login_time:
-                    item["created_at"] = acc.login_time
-                
-                old_cookies = item.get("cookies", [])
-                new_cookies = []
-                seen_names = {"serviceToken", "userId", "xiaomichatbot_ph"}
-                new_cookies.append({"name": "serviceToken", "value": acc.service_token})
-                new_cookies.append({"name": "userId", "value": acc.user_id})
-                if acc.xiaomichatbot_ph:
-                    new_cookies.append({"name": "xiaomichatbot_ph", "value": acc.xiaomichatbot_ph})
-                    
-                for c in old_cookies:
-                    if isinstance(c, dict) and c.get("name") not in seen_names:
-                        new_cookies.append(c)
-                item["cookies"] = new_cookies
-                output_data.append(item)
-                
+                item["email"] = acc.email
+                item["password"] = acc.password
+                item["token"] = acc.pass_token
+                item["created_at"] = acc.created_at
+
+                # Merge or rebuild cookies in-place to preserve order and duplicates
+                cookies = item.get("cookies", [])
+                if not isinstance(cookies, list):
+                    cookies = []
+
+                has_uid = False
+                has_pt = False
+                has_did = False
+                for c in cookies:
+                    if not isinstance(c, dict):
+                        continue
+                    name = c.get("name")
+                    if name == "userId":
+                        c["value"] = acc.user_id
+                        has_uid = True
+                    elif name == "passToken":
+                        c["value"] = acc.pass_token
+                        has_pt = True
+                    elif name == "deviceId":
+                        c["value"] = acc.device_id
+                        has_did = True
+
+                if not has_uid and acc.user_id:
+                    cookies.append({"name": "userId", "value": acc.user_id})
+                if not has_pt and acc.pass_token:
+                    cookies.append({
+                        "name": "passToken",
+                        "value": acc.pass_token,
+                        "domain": ".account.xiaomi.com",
+                        "path": "/",
+                        "expires": 1784089697.526279,
+                        "httpOnly": True,
+                        "secure": True,
+                        "sameSite": "None"
+                    })
+                if not has_did and acc.device_id:
+                    cookies.append({
+                        "name": "deviceId",
+                        "value": acc.device_id,
+                        "domain": ".account.xiaomi.com",
+                        "path": "/",
+                        "expires": 1815193697.526177,
+                        "httpOnly": False,
+                        "secure": True,
+                        "sameSite": "None"
+                    })
+
+                item["cookies"] = cookies
+                out.append(item)
+            try:
+                with open("accounts.json", 'w', encoding='utf-8') as f:
+                    json.dump(out, f, indent=4, ensure_ascii=False)
+            except Exception as e:
+                print(f"写入 accounts.json 失败: {e}")
+
+    # ─── MiMo 会话 (mimo_sessions.json) ─────────────────────
+
+    def load_mimo_sessions(self) -> int:
+        f = Path("mimo_sessions.json")
+        if not f.exists():
+            self.config.mimo_accounts = []
+            return 0
         try:
-            with open(accounts_file, 'w', encoding='utf-8') as f:
-                json.dump(output_data, f, indent=4, ensure_ascii=False)
+            with open(f, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
         except Exception as e:
-            print(f"写入 accounts.json 失败: {e}")
+            print(f"读取 mimo_sessions.json 失败: {e}")
+            self.config.mimo_accounts = []
+            return 0
+
+        sessions = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            st = item.get("service_token", "")
+            uid = item.get("user_id", "")
+            if st and uid:
+                sessions.append(MimoAccount(
+                    service_token=st, user_id=uid,
+                    email=item.get("email", ""),
+                    xiaomichatbot_ph=item.get("xiaomichatbot_ph", ""),
+                    login_time=item.get("created_at", ""),
+                    is_valid=item.get("is_valid", True),
+                    source_account=item.get("source_account", ""),
+                ))
+        self.config.mimo_accounts = sessions
+        return len(sessions)
+
+    def save_mimo_sessions(self):
+        with self.lock:
+            out = []
+            for acc in self.config.mimo_accounts:
+                out.append({
+                    "user_id": acc.user_id,
+                    "service_token": acc.service_token,
+                    "xiaomichatbot_ph": acc.xiaomichatbot_ph,
+                    "email": acc.email,
+                    "source_account": acc.source_account,
+                    "created_at": acc.login_time,
+                    "is_valid": acc.is_valid,
+                })
+            try:
+                with open("mimo_sessions.json", 'w', encoding='utf-8') as f:
+                    json.dump(out, f, indent=4, ensure_ascii=False)
+            except Exception as e:
+                print(f"写入 mimo_sessions.json 失败: {e}")
+
+    # ─── 账号轮询 ────────────────────────────────────────────
 
     def get_next_account(self) -> Optional[MimoAccount]:
-        """获取下一个未超载的账号（轮询 + 会话限制）"""
         with self.lock:
             if not self.config.mimo_accounts:
                 return None
-                
+
             from app.session_store import get_account_session_count
-            
-            total_accounts = len(self.config.mimo_accounts)
-            attempts = 0
+
+            total = len(self.config.mimo_accounts)
             limit = self.config.session_limit_per_account
-            
-            while attempts < total_accounts:
-                account = self.config.mimo_accounts[self.account_idx % total_accounts]
+
+            for _ in range(total):
+                account = self.config.mimo_accounts[self.account_idx % total]
                 self.account_idx += 1
-                attempts += 1
-                
-                # 跳过无效账号
                 if not account.is_valid:
                     continue
-                    
-                # 检查会话上限
-                active_sessions = get_account_session_count(account.user_id)
-                if active_sessions < limit:
+                if get_account_session_count(account.user_id) < limit:
                     return account
-                    
-            # 如果所有有效账号都满载了，就退避到原始轮询（或者选一个最近的），这里简单返回轮询结果
-            # 为了防止死循环，直接返回轮询的下一个有效账号，不在乎是否满载（保证服务可用性优先）
-            for _ in range(total_accounts):
-                account = self.config.mimo_accounts[self.account_idx % total_accounts]
+
+            # 全满载，返回任意有效账号
+            for _ in range(total):
+                account = self.config.mimo_accounts[self.account_idx % total]
                 self.account_idx += 1
                 if account.is_valid:
                     return account
-                    
-            # 连一个有效账号都没有
-            return self.config.mimo_accounts[self.account_idx % total_accounts]
+
+            return self.config.mimo_accounts[0]
 
     def update_config(self, new_config: dict):
-        """更新配置"""
         with self.lock:
-            existing_accounts = {acc.user_id: acc for acc in self.config.mimo_accounts}
-            accounts = []
-            for acc in new_config.get('mimo_accounts', []):
-                uid = acc.get("user_id")
-                new_acc = MimoAccount(**{k: v for k, v in acc.items() if k in MimoAccount.__dataclass_fields__})
-                if uid in existing_accounts:
-                    new_acc.raw_data = existing_accounts[uid].raw_data
-                accounts.append(new_acc)
-                
-            self.config = Config(
-                api_keys=new_config.get('api_keys', 'sk-default'),
-                admin_password=new_config.get('admin_password', 'admin'),
-                mimo_accounts=accounts,
-                models=new_config.get('models', []),
-                tools_passthrough=new_config.get('tools_passthrough', False),
-                session_limit_per_account=new_config.get('session_limit_per_account', 10)
-            )
-            self.save()
+            self.config.api_keys = new_config.get('api_keys', 'sk-default')
+            self.config.admin_password = new_config.get('admin_password', 'admin')
+            self.config.tools_passthrough = new_config.get('tools_passthrough', False)
+            self.config.session_limit_per_account = new_config.get('session_limit_per_account', 10)
+            self.config.session_reuse = new_config.get('session_reuse', True)
+            self.config.models = new_config.get('models', [])
+            self.save_config_only()
 
     def get_config(self) -> dict:
-        """获取配置"""
         with self.lock:
             return self.config.to_dict()
 
 
-# 全局配置管理器实例
 config_manager = ConfigManager()

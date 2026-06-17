@@ -375,11 +375,7 @@ def build_query_from_messages(
 ) -> str:
     """从消息列表构建查询字符串。
 
-    格式：系统消息（含工具提示词）→ 对话历史。
-    MiMo API 没有 system/user 角色分离，query 是纯文本拼接。
-    工具提示词嵌入 system 消息一次，不再每轮重复注入。
-    无 system 消息但有 tools 时自动补 system。
-    passthrough=True 时跳过 MiMoML 格式说明书，直接嵌入原始工具定义。
+    采用强隔离的 MiMoML XML 标签结构防止 Prompt Injection。
     """
     from .tool_call import build_tool_prompt
 
@@ -397,7 +393,7 @@ def build_query_from_messages(
                     if isinstance(item, dict) and item.get("type") == "text":
                         text_parts.append(item.get("text", ""))
                 content = " ".join(text_parts)
-            system_text = str(content).strip()
+            system_text += str(content).strip() + "\n"
             continue
 
         if isinstance(content, list):
@@ -407,28 +403,42 @@ def build_query_from_messages(
                     text_parts.append(item.get("text", ""))
             content = " ".join(text_parts)
 
+        # 把 assistant 工具调用对象转换为文本（MiMoML 标签形式）
         if hasattr(msg, 'tool_calls') and msg.tool_calls:
-            content = _serialize_tool_calls(msg.tool_calls)
+            tool_str = _serialize_tool_calls(msg.tool_calls)
+            # 兼容：如果 assistant 已有文本内容，则拼接，否则直接使用工具调用字符串
+            content = f"{content}\n{tool_str}" if content else tool_str
+            content = content.strip()
 
         if role == "tool":
             tool_call_id = getattr(msg, 'tool_call_id', '') or ''
             clean = re.sub(r'\[TOOL_RESULT\]\s*', '', content, flags=re.IGNORECASE)
             clean = clean.strip()
-            content = f"[tool_result id={tool_call_id[:8]}] {clean}"
+            # 转义 CDATA 避免嵌套导致 XML 解析破坏
+            clean_cdata = clean.replace(']]>', ']]]]><![CDATA[>')
+            content = f'<|MiMoML|tool_response id="{tool_call_id}">\n<![CDATA[\n{clean_cdata}\n]]>\n</|MiMoML|tool_response>'
+            query_parts.append(content)
+        elif role == "user":
+            query_parts.append(f"<|MiMoML|user>\n{content}\n</|MiMoML|user>")
+        elif role == "assistant":
+            query_parts.append(f"<|MiMoML|assistant>\n{content}\n</|MiMoML|assistant>")
+        else:
+            query_parts.append(f"<|MiMoML|{role}>\n{content}\n</|MiMoML|{role}>")
 
-        query_parts.append(f"{role}: {content}")
+    system_text = system_text.strip()
 
-    # 工具提示词嵌入 system 消息（一次，不再每轮重复追加末尾）
+    # 工具提示词嵌入 system 消息
     if tools:
         tool_prompt = build_tool_prompt(tools, passthrough=passthrough)
         if tool_prompt:
+            tool_block = f"<|MiMoML|tools_definition>\n{tool_prompt}\n</|MiMoML|tools_definition>"
             if system_text:
-                system_text = system_text + "\n\n" + tool_prompt
+                system_text = system_text + "\n\n" + tool_block
             else:
-                system_text = tool_prompt
+                system_text = tool_block
 
     # system 消息插入最前面
     if system_text:
-        query_parts.insert(0, f"system: {system_text}")
+        query_parts.insert(0, f"<|MiMoML|system_instructions>\n{system_text}\n</|MiMoML|system_instructions>")
 
-    return "\n".join(query_parts)
+    return "\n\n".join(query_parts)

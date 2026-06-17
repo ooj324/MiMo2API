@@ -18,7 +18,8 @@
 
         <div class="card" style="padding: 0; background: transparent; border: none; box-shadow: none;">
             <div class="tabs">
-                <div class="tab active" onclick="switchTab('accounts')">账号管理</div>
+                <div class="tab active" onclick="switchTab('xiaomi')">小米账号</div>
+                <div class="tab" onclick="switchTab('mimo')">MiMo 会话</div>
                 <div class="tab" onclick="switchTab('login')">账号登录</div>
                 <div class="tab" onclick="switchTab('curl')">cURL 导入</div>
                 <div class="tab" onclick="switchTab('cookie')">Cookie 导入</div>
@@ -27,29 +28,63 @@
             </div>
 
             <div class="tab-content">
-                <!-- 账号管理 -->
-                <div id="panel-accounts" class="tab-panel active">
+                <!-- 小米账号管理 -->
+                <div id="panel-xiaomi" class="tab-panel active">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                        <h3 style="font-size: 1.1rem; font-weight: 600; color: #e2e8f0;">已配置的账号</h3>
+                        <h3 style="font-size: 1.1rem; font-weight: 600; color: #e2e8f0;">小米 Passport 账号</h3>
                         <div class="btn-group" style="margin-top: 0; gap: 8px;">
-                            <button class="btn-outline" onclick="syncAccountsJson()" style="padding: 6px 12px; font-size: 12px;">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg>
-                                同步 accounts.json
-                            </button>
-                            <button class="btn-outline" onclick="exportAccountsJson()" style="padding: 6px 12px; font-size: 12px;">
-                                导出 JSON
-                            </button>
-                            <button class="btn-outline" onclick="$id('jsonFile').click()" style="padding: 6px 12px; font-size: 12px;">
-                                导入 JSON
-                            </button>
-                            <input type="file" id="jsonFile" style="display:none" accept=".json" onchange="importAccountsJson(event)">
+                            <button class="btn-outline" onclick="$id('xiaomiJsonFile').click()" style="padding: 6px 12px; font-size: 12px;">导入 JSON</button>
+                            <button class="btn-outline" onclick="exportXiaomiJson()" style="padding: 6px 12px; font-size: 12px;">导出 JSON</button>
+                            <input type="file" id="xiaomiJsonFile" style="display:none" accept=".json" onchange="importXiaomiJson(event)">
                         </div>
                     </div>
-                    <div id="accounts"></div>
+                    <div class="status info" style="margin-bottom: 16px;">
+                        <div>小米账号存储 <code>passToken</code> + <code>userId</code> 原始凭证。点击「兑换 MiMo」将自动兑换为可用的 MiMo 会话。</div>
+                    </div>
+
+                    <!-- 快速添加 -->
+                    <div style="background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px; margin-bottom: 16px; border: 1px solid var(--border);">
+                        <div style="font-size: 13px; font-weight: 500; color: #cbd5e1; margin-bottom: 10px;">快速添加小米账号</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <input type="text" id="xi-uid" placeholder="userId (必填)">
+                            <input type="text" id="xi-token" placeholder="passToken (必填)">
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+                            <input type="text" id="xi-email" placeholder="email (选填)">
+                            <input type="text" id="xi-device" placeholder="deviceId (选填)">
+                        </div>
+                        <button class="btn-primary" style="width:100%; margin-top: 10px;" onclick="addXiaomiAccount()">添加账号</button>
+                    </div>
+
+                    <div id="xiaomiAccounts"></div>
                     <div class="btn-group" style="margin-top: 20px;">
-                        <button class="btn-success" onclick="testAll()">测试全部有效性</button>
+                        <button class="btn-success" onclick="exchangeAllXiaomi()">批量兑换 MiMo</button>
+                        <button class="btn-outline" onclick="loadXiaomiAccounts()">刷新列表</button>
+                    </div>
+                </div>
+
+                <!-- MiMo 会话管理 -->
+                <div id="panel-mimo" class="tab-panel">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; color: #e2e8f0;">MiMo 会话 (Cookies)</h3>
+                        <div class="btn-group" style="margin-top: 0; gap: 8px;">
+                            <button class="btn-outline" onclick="syncMimoSessions()" style="padding: 6px 12px; font-size: 12px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg>
+                                同步刷新
+                            </button>
+                            <button class="btn-outline" onclick="exportMimoJson()" style="padding: 6px 12px; font-size: 12px;">导出 JSON</button>
+                            <button class="btn-outline" onclick="$id('mimoJsonFile').click()" style="padding: 6px 12px; font-size: 12px;">导入 JSON</button>
+                            <input type="file" id="mimoJsonFile" style="display:none" accept=".json" onchange="importMimoJson(event)">
+                        </div>
+                    </div>
+                    <div class="status info" style="margin-bottom: 16px;">
+                        <div>MiMo 会话是通过小米账号兑换获得的 <code>serviceToken</code> + <code>xiaomichatbot_ph</code>，用于实际 API 调用。</div>
+                    </div>
+                    <div id="mimoAccounts"></div>
+                    <div class="btn-group" style="margin-top: 20px;">
+                        <button class="btn-success" onclick="testAllMimo()">测试全部有效性</button>
                         <button class="btn-primary" onclick="cleanupSessions()" style="background:linear-gradient(135deg, #f43f5e, #e11d48)">清理过期会话</button>
-                        <button class="btn-outline" onclick="loadAccounts()">刷新列表</button>
+                        <button class="btn-outline" onclick="loadMimoAccounts()">刷新列表</button>
                     </div>
                 </div>
 
@@ -82,7 +117,7 @@
                     <div id="login-method-passport" class="login-sub-panel" style="display:none;">
                         <div class="status info" style="margin-bottom: 20px;">
                             <div>
-                                使用已有的小米 `passToken` 和 `userId` 直接兑换 MiMo 权限，无需输入密码，也不会触发二次验证。
+                                使用已有的小米 <code>passToken</code> 和 <code>userId</code> 直接兑换 MiMo 权限，无需输入密码，也不会触发二次验证。
                             </div>
                         </div>
                         <div class="field">
@@ -105,7 +140,7 @@
                         <h4 style="color:var(--primary); font-size:15px; margin-bottom:12px;">🔒 需要安全验证</h4>
                         <p style="font-size:13px; color:var(--text); line-height:1.8; margin-bottom:16px;">
                             当前登录请求已被小米安全策略拦截，需要进行安全验证。<br>
-                            请点击下方链接，<b>在浏览器新窗口中完成验证</b>。验证通过（看到“验证成功”提示）后，回到这里点击下方的<b>“我已完成验证”</b>按钮。
+                            请点击下方链接，<b>在浏览器新窗口中完成验证</b>。验证通过（看到"验证成功"提示）后，回到这里点击下方的<b>"我已完成验证"</b>按钮。
                         </p>
                         <div style="margin-bottom:20px;">
                             <a id="l-2fa-link" href="#" target="_blank" class="btn-outline" style="display:inline-block; text-decoration:none; padding:10px 20px; border-color:var(--primary); color:var(--primary); font-weight:600;">👉 点击去完成验证</a>
@@ -151,7 +186,7 @@
                         <div class="field"><label>userId</label><input type="text" id="c-uid" placeholder="必填"></div>
                         <div class="field"><label>xiaomichatbot_ph</label><input type="text" id="c-ph" placeholder="选填"></div>
                     </div>
-                    <button id="btn-save-cookie" class="btn-primary" style="width:100%; margin-top: 10px;" onclick="saveCookie()">保存账号</button>
+                    <button id="btn-save-cookie" class="btn-primary" style="width:100%; margin-top: 10px;" onclick="saveCookie()">保存为 MiMo 会话</button>
                 </div>
 
                 <!-- 系统设置 -->
