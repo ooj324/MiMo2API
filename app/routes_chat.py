@@ -59,14 +59,14 @@ def _strip_tool_result_blocks(text: str) -> str:
     cleaned = re.sub(r'\[tool_result\s+id=\S+\]\s*', '', cleaned, flags=re.IGNORECASE)
     # XML 格式: <tool_result>...</tool_result>（模型学会的另一种格式）
     cleaned = re.sub(r'</?tool_result>\s*', '', cleaned, flags=re.IGNORECASE)
-    return cleaned.strip()
+    return cleaned
 
 
 def _strip_citations(text: str) -> str:
     """移除 MiMo 模型输出的引用标记，如 (citation:1)(citation:14)。"""
     if not text:
         return text
-    return re.sub(r'\(citation:\d+\)\s*', '', text).strip()
+    return re.sub(r'\(citation:\d+\)\s*', '', text)
 
 
 def _camel_case(name: str) -> str:
@@ -88,8 +88,8 @@ def _strip_tool_name_prefix(text: str, tool_names: list) -> str:
         if '_' in n:
             variants.append(re.escape(_camel_case(n)))
     escaped = '|'.join(variants)
-    cleaned = re.sub(rf'^({escaped})\s*\n?', '', text.strip(), flags=re.IGNORECASE)
-    return cleaned.strip()
+    cleaned = re.sub(rf'^\s*({escaped})\s*\n?', '', text, flags=re.IGNORECASE)
+    return cleaned
 
 
 def _strip_mimo_prefix(text: str) -> str:
@@ -103,8 +103,8 @@ def _strip_mimo_prefix(text: str) -> str:
                 'imageSearch', 'fileSearch', 'getLocation', 'webExtract',
                 'getWeather', 'calculator']
     escaped = '|'.join(re.escape(p) for p in prefixes)
-    cleaned = re.sub(rf'^({escaped})\s*\n?', '', text.strip(), flags=re.IGNORECASE)
-    return cleaned.strip()
+    cleaned = re.sub(rf'^\s*({escaped})\s*\n?', '', text, flags=re.IGNORECASE)
+    return cleaned
 
 
 def _clean_response_text(text: str, tool_names: list = None) -> str:
