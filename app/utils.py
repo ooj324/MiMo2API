@@ -120,12 +120,12 @@ def _serialize_tool_calls(tool_calls: list) -> str:
     """统一定义工具调用序列化 — 兼容 dict 和 pydantic model。"""
     tc_lines = []
     for tc in tool_calls:
-        tc_id = _safe_nested_get(tc, "id", "")
+        tc_id = _safe_nested_get(tc, "id", default="")
         fn = _safe_nested_get(tc, "function")
         if not fn:
             continue
-        fname = _safe_nested_get(fn, "name", "")
-        args_str = _safe_nested_get(fn, "arguments", "{}")
+        fname = _safe_nested_get(fn, "name", default="")
+        args_str = _safe_nested_get(fn, "arguments", default="{}")
 
         if not isinstance(args_str, str):
             try:

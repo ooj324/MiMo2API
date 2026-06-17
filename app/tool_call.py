@@ -687,7 +687,7 @@ def clean_tool_text(text: str) -> str:
     text = re.sub(r"<(?:[|]MMML[|])?tool_calls?>.*?</(?:[|]MMML[|])?tool_calls?>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<(?:[|]MMML[|])?invoke[^>]*>.*?</(?:[|]MMML[|])?invoke>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<(?:[|]MMML[|])?parameter[^>]*>.*?</(?:[|]MMML[|])?parameter>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<!\[CDATA\[.*?\]\]>", "", text, flags=re.DOTALL)
+    # text = re.sub(r"<!\[CDATA\[.*?\]\]>", "", text, flags=re.DOTALL) # 防止过度清理正常文本中的 CDATA
     # 最后清理可能残留的零散 MMML 标签
     text = re.sub(r"</?\|MMML\|[^>]*>", "", text, flags=re.IGNORECASE)
     # <tool_call>...</tool_call>

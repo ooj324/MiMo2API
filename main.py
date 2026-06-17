@@ -14,6 +14,53 @@ from app.config import config_manager
 from app.anthropic_routes import router as anthropic_router
 from app.batch import init_batch_storage as init_anthropic_batches
 from app.auth import verify_admin
+import sys
+import logging
+
+# --- 日志配置 ---
+def setup_logging():
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "mimo2api.log")
+
+    # 每次启动时清空日志文件
+    with open(log_file, "w", encoding="utf-8") as f:
+        f.truncate(0)
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    
+    if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+        f_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+        f_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        f_handler.setLevel(logging.DEBUG)
+        logger.addHandler(f_handler)
+        
+    class StreamToLogger:
+        def __init__(self, logger_name, level, original_stream):
+            self.logger = logging.getLogger(logger_name)
+            self.level = level
+            self.original_stream = original_stream
+
+        def write(self, buf):
+            self.original_stream.write(buf)
+            self.original_stream.flush()
+            for line in buf.rstrip().splitlines():
+                stripped = line.rstrip()
+                if stripped:
+                    self.logger.log(self.level, stripped)
+
+        def flush(self):
+            self.original_stream.flush()
+            
+        def __getattr__(self, name):
+            return getattr(self.original_stream, name)
+
+    sys.stdout = StreamToLogger("STDOUT", logging.DEBUG, sys.stdout)
+    sys.stderr = StreamToLogger("STDERR", logging.ERROR, sys.stderr)
+
+setup_logging()
+# ---------------
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -144,12 +191,36 @@ def main():
 按 Ctrl+C 停止服务器
 """)
 
+    from uvicorn.config import LOGGING_CONFIG
+
+    # 配置 Uvicorn 日志写入文件
+    log_config = LOGGING_CONFIG.copy()
+    log_config["disable_existing_loggers"] = False
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    log_file = os.path.join(log_dir, "mimo2api.log")
+
+    log_config["handlers"]["file"] = {
+        "class": "logging.FileHandler",
+        "filename": log_file,
+        "mode": "a",
+        "formatter": "default",
+        "encoding": "utf-8",
+    }
+    
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        if logger_name in log_config.get("loggers", {}):
+            handlers = log_config["loggers"][logger_name].get("handlers", [])
+            if "file" not in handlers:
+                handlers.append("file")
+                log_config["loggers"][logger_name]["handlers"] = handlers
+
     # 启动服务器
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=port,
-        log_level="info"
+        log_level="debug",
+        log_config=log_config
     )
 
 

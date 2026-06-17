@@ -328,18 +328,21 @@ async def _anthropic_stream_think_wrapper(
         # 发 tool_use blocks
         for tc in collected_tool_calls:
             fn = tc.get("function", {})
-            try:
-                arguments = json.loads(fn.get("arguments", "{}"))
-            except (json.JSONDecodeError, TypeError):
-                arguments = {}
+            arguments_str = fn.get("arguments", "{}")
             idx = st.next_index
             st.next_index += 1
             yield _make_cb_start(idx, {
                 "type": "tool_use",
                 "id": tc.get("id", f"tu_{uuid.uuid4().hex[:24]}"),
                 "name": fn.get("name", ""),
-                "input": arguments,
+                "input": {},  # 严格按协议：start 时输入必须为空对象
             })
+            if arguments_str:
+                yield _make_sse("content_block_delta", {
+                    "type": "content_block_delta",
+                    "index": idx,
+                    "delta": {"type": "input_json_delta", "partial_json": arguments_str},
+                })
             yield _make_cb_stop(idx)
     else:
         # 无工具调用：text 已在流中发出，只需关闭 text block

@@ -482,9 +482,28 @@ async def _stream_response(
 
             if collected_tool_calls:
                 # 有工具调用 → 不发 content，只发 tool_calls
-                streaming_tc = [{**tc, "index": i} for i, tc in enumerate(collected_tool_calls)]
-                yield _build_chunk(msg_id, model, created=created_t,
-                                   tool_calls=streaming_tc, finish_reason="tool_calls")
+                for i, tc in enumerate(collected_tool_calls):
+                    # 兼容严格的 OpenAI 客户端：分两次发送 name 和 arguments
+                    chunk1_tc = {
+                        "index": i,
+                        "id": tc.get("id"),
+                        "type": "function",
+                        "function": {
+                            "name": tc.get("function", {}).get("name", ""),
+                            "arguments": ""
+                        }
+                    }
+                    yield _build_chunk(msg_id, model, created=created_t, tool_calls=[chunk1_tc])
+                    
+                    chunk2_tc = {
+                        "index": i,
+                        "function": {
+                            "arguments": tc.get("function", {}).get("arguments", "")
+                        }
+                    }
+                    yield _build_chunk(msg_id, model, created=created_t, tool_calls=[chunk2_tc])
+
+                yield _build_chunk(msg_id, model, created=created_t, finish_reason="tool_calls")
                 yield "data: [DONE]\n\n"
                 if last_usage:
                     _add_usage(model, last_usage.get("promptTokens", 0), last_usage.get("completionTokens", 0))

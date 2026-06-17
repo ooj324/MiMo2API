@@ -8,3 +8,4 @@ accounts.json
 mimo_sessions.json
 *.bak
 server.log
+mimo2api.log
