@@ -118,10 +118,10 @@ async def exchange_passport_to_mimo(pass_token: str, user_id: str, device_id: st
         mimo_cookies = {}
         for r in (resp, resp_ticket, resp_sts):
             for cookie_str in r.headers.get_list("set-cookie"):
-                c = _SimpleCookie()
-                c.load(cookie_str)
-                for k, m in c.items():
-                    mimo_cookies[k] = m.value
+                parts = cookie_str.split(';')
+                if parts and '=' in parts[0]:
+                    k, v = parts[0].split('=', 1)
+                    mimo_cookies[k.strip()] = v.strip()
         for cookie in client.cookies.jar:
             mimo_cookies[cookie.name] = cookie.value
 
@@ -375,10 +375,10 @@ async def login_password(request: LoginPasswordRequest, username: str = Depends(
         mimo_cookies = {}
         for r in (resp, resp_auth, resp_sts):
             for cookie_str in r.headers.get_list("set-cookie"):
-                c = _SimpleCookie()
-                c.load(cookie_str)
-                for k, m in c.items():
-                    mimo_cookies[k] = m.value
+                parts = cookie_str.split(';')
+                if parts and '=' in parts[0]:
+                    k, v = parts[0].split('=', 1)
+                    mimo_cookies[k.strip()] = v.strip()
         for cookie in client.cookies.jar:
             mimo_cookies[cookie.name] = cookie.value
 
@@ -484,10 +484,10 @@ async def login_2fa_verify(request: Login2faVerifyRequest, username: str = Depen
         mimo_cookies = {}
         for r in (resp_auth, resp_sts):
             for cookie_str in r.headers.get_list("set-cookie"):
-                c = _SimpleCookie()
-                c.load(cookie_str)
-                for k, m in c.items():
-                    mimo_cookies[k] = m.value
+                parts = cookie_str.split(';')
+                if parts and '=' in parts[0]:
+                    k, v = parts[0].split('=', 1)
+                    mimo_cookies[k.strip()] = v.strip()
         for cookie in client.cookies.jar:
             mimo_cookies[cookie.name] = cookie.value
 
