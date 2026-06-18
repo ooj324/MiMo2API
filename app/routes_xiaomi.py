@@ -15,10 +15,23 @@ router = APIRouter()
 
 @router.get("/api/xiaomi-accounts")
 async def list_xiaomi_accounts(username: str = Depends(verify_admin)):
-    """列出所有小米 Passport 账号"""
+    """列出所有小米 Passport 账号（含 MiMo 会话关联信息）"""
+    # 构建 source_account -> MiMo 会话列表 的映射
+    mimo_map: dict[str, list] = {}
+    for macc in config_manager.config.mimo_accounts:
+        src = macc.source_account or macc.user_id
+        mimo_map.setdefault(src, []).append(macc)
+
     accounts = []
     for acc in config_manager.config.xiaomi_accounts:
-        accounts.append(acc.to_dict())
+        d = acc.to_dict()
+        # 查找关联的 MiMo 会话
+        linked = mimo_map.get(acc.user_id, [])
+        d["mimo_session_count"] = len(linked)
+        d["mimo_sessions_valid"] = sum(1 for s in linked if s.is_valid)
+        d["mimo_sessions_invalid"] = sum(1 for s in linked if not s.is_valid)
+        d["has_mimo_session"] = len(linked) > 0
+        accounts.append(d)
     return {"accounts": accounts}
 
 

@@ -317,9 +317,9 @@ async def chat_completions(
 
     # 流式响应
     if request.stream:
-        include_usage = False
-        if request.stream_options and request.stream_options.include_usage:
-            include_usage = True
+        include_usage = config_manager.config.stream_include_usage
+        if request.stream_options and request.stream_options.include_usage is not None:
+            include_usage = request.stream_options.include_usage
 
         return StreamingResponse(
             _stream_response(client, query, thinking, effective_model, None if tools_no_parsing else tools_dict, multi_medias, passthrough=passthrough_mode,

@@ -26,6 +26,8 @@ var _I={zh:{
     "sessionReuseHint":"开启后将复用与模型服务器的 HTTP 长连接，有效提升请求速度。",
     "debugModeLabel":"开启终端调试日志 (Debug Mode)",
     "debugModeHint":"开启后将在后台终端实时打印 MiMo 上游接口请求体及完整的 SSE 响应块，便于排查格式断流或工具调用异常等问题。",
+    "streamUsageLabel":"流式返回附加 Token 用量 (Stream Include Usage)",
+    "streamUsageHint":"开启后，所有流式请求在最后结束块前都会强制发送带有 Token 统计数据的专用块，等同于在请求中设置了 stream_options: {\"include_usage\": true}。",
     "adminPwdLabel":"后台管理员密码",
     "noXiaomiAccts":"暂无小米账号，请在上方添加",
     "tblAccount":"账号","tblUid":"UID","tblToken":"Token","tblDevice":"设备 ID","tblCreated":"创建时间","tblActions":"操作","tblStatus":"状态","tblSource":"来源账号","tblSessions":"会话数量","tblHasPwd":"有密码","btnExchange":"兑换 MiMo","btnTest":"连通性测试","btnDelete":"移除"
@@ -57,6 +59,8 @@ en:{
     "sessionReuseHint":"Reuse persistent HTTP connections with model servers to significantly improve response times.",
     "debugModeLabel":"Enable Terminal Debug Logs (Debug Mode)",
     "debugModeHint":"Enable this to print the raw MiMo upstream request bodies and full SSE response chunks to the backend terminal, useful for debugging format issues or tool call errors.",
+    "streamUsageLabel":"Include Usage in Stream (Stream Include Usage)",
+    "streamUsageHint":"When enabled, a special chunk containing token usage statistics will be forcefully sent before the final chunk in all stream requests, equivalent to setting stream_options: {\"include_usage\": true}.",
     "adminPwdLabel":"Admin Password",
     "noXiaomiAccts":"No Xiaomi accounts, please add above",
     "tblAccount":"Account","tblUid":"UID","tblToken":"Token","tblDevice":"Device ID","tblCreated":"Created At","tblActions":"Actions","tblStatus":"Status","tblSource":"Source Account","tblSessions":"Sessions","tblHasPwd":"Has Password","btnExchange":"Exchange MiMo","btnTest":"Test Connection","btnDelete":"Remove"
@@ -109,6 +113,7 @@ async function loadConfig() {
         $id('noParsingToggle').checked = !!cfg.tools_no_parsing;
         $id('sessionReuseToggle').checked = cfg.session_reuse !== false;
         $id('debugModeToggle').checked = !!cfg.debug_mode;
+        $id('streamIncludeUsageToggle').checked = !!cfg.stream_include_usage;
         $id('adminPassword').value = cfg.admin_password || '';
         $id('sessionLimit').value = cfg.session_limit_per_account || 10;
         $id('resinUrl').value = cfg.resin_url || '';
@@ -122,6 +127,7 @@ async function saveKeys() {
     cfg.tools_no_parsing = $id('noParsingToggle').checked;
     cfg.session_reuse = $id('sessionReuseToggle').checked;
     cfg.debug_mode = $id('debugModeToggle').checked;
+    cfg.stream_include_usage = $id('streamIncludeUsageToggle').checked;
     cfg.admin_password = $id('adminPassword').value || 'admin';
     cfg.session_limit_per_account = parseInt($id('sessionLimit').value) || 10;
     cfg.resin_url = $id('resinUrl').value.trim();
@@ -161,6 +167,7 @@ async function loadXiaomiAccounts() {
                             <th>${_('tblAccount')}</th>
                             <th>${_('tblUid')}</th>
                             <th>${_('tblToken')}</th>
+                            <th>${_lang === 'zh' ? 'MiMo 状态' : 'MiMo Status'}</th>
                             <th>${_('tblDevice')}</th>
                             <th>${_('tblCreated')}</th>
                             <th>${_('tblActions')}</th>
@@ -168,26 +175,50 @@ async function loadXiaomiAccounts() {
                     </thead>
                     <tbody>
         `;
-        html += d.accounts.map((a, i) => `
-            <tr>
-                <td>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span>${a.email || 'UID: ' + a.user_id}</span>
-                        ${a.has_password ? `<span class="badge badge-valid" style="background:rgba(129,140,248,0.15);color:#a5b4fc;border-color:rgba(129,140,248,0.3)">${_('tblHasPwd')}</span>` : ''}
-                    </div>
-                </td>
-                <td>${a.user_id}</td>
-                <td><code>${a.pass_token_masked}</code></td>
-                <td><span style="opacity:0.7">${a.device_id || '-'}</span></td>
-                <td><span style="opacity:0.5; font-size:12px;">${a.created_at || '-'}</span></td>
-                <td>
-                    <div class="actions">
-                        <button class="btn-success" style="padding:6px 12px; font-size:12px" onclick="exchangeXiaomi(${i})">${_('btnExchange')}</button>
-                        <button class="btn-danger" style="padding:6px 12px; font-size:12px; background:transparent; color:#fb7185; border:1px solid rgba(251, 113, 133, 0.3);" onclick="delXiaomi(${i})">${_('btnDelete')}</button>
-                    </div>
-                </td>
-            </tr>
-        `).join('');
+        html += d.accounts.map((a, i) => {
+            let mimoBadge = '';
+            if (a.has_mimo_session) {
+                const validCount = a.mimo_sessions_valid || 0;
+                const invalidCount = a.mimo_sessions_invalid || 0;
+                if (validCount > 0 && invalidCount === 0) {
+                    mimoBadge = `<span class="badge badge-valid" style="font-size:11px;">✓ ${_lang === 'zh' ? '已兑换' : 'Exchanged'}</span>`;
+                } else if (validCount > 0 && invalidCount > 0) {
+                    mimoBadge = `<span class="badge badge-valid" style="font-size:11px;">✓ ${validCount}</span> <span class="badge badge-invalid" style="font-size:11px;">✗ ${invalidCount}</span>`;
+                } else {
+                    mimoBadge = `<span class="badge badge-invalid" style="font-size:11px;">✗ ${_lang === 'zh' ? '已失效' : 'Expired'}</span>`;
+                }
+            } else {
+                mimoBadge = `<span class="badge" style="font-size:11px; background:rgba(148,163,184,0.15); color:#94a3b8; border:1px solid rgba(148,163,184,0.2);">${_lang === 'zh' ? '未兑换' : 'Not Exchanged'}</span>`;
+            }
+            const exchangeBtnText = a.has_mimo_session
+                ? (_lang === 'zh' ? '重新兑换' : 'Re-exchange')
+                : _('btnExchange');
+            return `
+                <tr>
+                    <td>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span>${a.email || 'UID: ' + a.user_id}</span>
+                            ${a.has_password ? `<span class="badge badge-valid" style="background:rgba(129,140,248,0.15);color:#a5b4fc;border-color:rgba(129,140,248,0.3); font-size:11px;">${_('tblHasPwd')}</span>` : ''}
+                        </div>
+                    </td>
+                    <td>${a.user_id}</td>
+                    <td><code>${a.pass_token_masked}</code></td>
+                    <td>
+                        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                            ${mimoBadge}
+                        </div>
+                    </td>
+                    <td><span style="opacity:0.7">${a.device_id || '-'}</span></td>
+                    <td><span style="opacity:0.5; font-size:12px;">${a.created_at || '-'}</span></td>
+                    <td>
+                        <div class="actions">
+                            <button class="btn-success" style="padding:6px 12px; font-size:12px" onclick="exchangeXiaomi(${i})">${exchangeBtnText}</button>
+                            <button class="btn-danger" style="padding:6px 12px; font-size:12px; background:transparent; color:#fb7185; border:1px solid rgba(251, 113, 133, 0.3);" onclick="delXiaomi(${i})">${_('btnDelete')}</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
         html += `
                     </tbody>
                 </table>
@@ -242,9 +273,12 @@ async function exchangeXiaomi(i) {
             loadXiaomiAccounts();
         } else {
             toast(d.error || (_lang === 'zh' ? '兑换失败' : 'Exchange failed'), true);
+            btn.disabled = false; btn.textContent = _('btnExchange');
         }
-    } catch (e) { toast('请求失败', true); }
-    btn.disabled = false; btn.textContent = _('btnExchange');
+    } catch (e) {
+        toast('请求失败', true);
+        btn.disabled = false; btn.textContent = _('btnExchange');
+    }
 }
 
 async function exchangeAllXiaomi() {

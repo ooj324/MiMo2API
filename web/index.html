@@ -278,6 +278,19 @@
                             开启后将在后台终端实时打印 MiMo 上游接口请求体及完整的 SSE 响应块，便于排查格式断流或工具调用异常等问题。
                         </div>
                     </div>
+
+                    <div class="field" style="margin-top:16px; background: var(--bg-card); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
+                        <label class="toggle-row">
+                            <span class="toggle-label" data-i18n="streamUsageLabel">流式返回附加 Token 用量 (Stream Include Usage)</span>
+                            <label class="switch">
+                                <input type="checkbox" id="streamIncludeUsageToggle">
+                                <span class="slider"></span>
+                            </label>
+                        </label>
+                        <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px;line-height:1.6;" data-i18n="streamUsageHint">
+                            开启后，所有流式请求在最后结束块前都会强制发送带有 Token 统计数据的专用块，等同于在请求中设置了 <code>stream_options: {"include_usage": true}</code>。
+                        </div>
+                    </div>
                     
                     <button class="btn-primary" style="width:100%;margin-top:16px;padding:14px" onclick="saveKeys()">保存全部配置</button>
                     <div id="keysResult"></div>

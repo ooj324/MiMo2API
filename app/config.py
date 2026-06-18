@@ -68,6 +68,7 @@ class Config:
     session_limit_per_account: int = 10
     session_reuse: bool = True
     debug_mode: bool = False
+    stream_include_usage: bool = False
     resin_url: str = ""
     resin_platform_name: str = "Default"
 
@@ -89,6 +90,7 @@ class Config:
             "session_limit_per_account": self.session_limit_per_account,
             "session_reuse": self.session_reuse,
             "debug_mode": self.debug_mode,
+            "stream_include_usage": self.stream_include_usage,
             "resin_url": self.resin_url,
             "resin_platform_name": self.resin_platform_name,
         }
@@ -105,6 +107,7 @@ class Config:
             "session_limit_per_account": self.session_limit_per_account,
             "session_reuse": self.session_reuse,
             "debug_mode": self.debug_mode,
+            "stream_include_usage": self.stream_include_usage,
             "resin_url": self.resin_url,
             "resin_platform_name": self.resin_platform_name,
         }
@@ -135,6 +138,7 @@ class ConfigManager:
                         session_limit_per_account=data.get('session_limit_per_account', 10),
                         session_reuse=data.get('session_reuse', True),
                         debug_mode=data.get('debug_mode', False),
+                        stream_include_usage=data.get('stream_include_usage', False),
                         resin_url=data.get('resin_url', ''),
                         resin_platform_name=data.get('resin_platform_name', 'Default')
                     )
@@ -377,6 +381,8 @@ class ConfigManager:
             self.config.tools_no_parsing = new_config.get('tools_no_parsing', False)
             self.config.session_limit_per_account = new_config.get('session_limit_per_account', 10)
             self.config.session_reuse = new_config.get('session_reuse', True)
+            self.config.debug_mode = new_config.get('debug_mode', False)
+            self.config.stream_include_usage = new_config.get('stream_include_usage', False)
             self.config.resin_url = new_config.get('resin_url', '')
             self.config.resin_platform_name = new_config.get('resin_platform_name', 'Default')
             self.config.models = new_config.get('models', [])
